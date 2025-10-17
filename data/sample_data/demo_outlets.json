@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Canadian Pizza Pasir Ris",
+    "address": "93, pasir ris drive 3, #01-06, 519498",
+    "contact_person": "Vasanth",
+    "contact_number": "90280519",
+    "whatsapp_user_id": "+6590280519",
+    "usual_order_days": ["Tuesday", "Thursday"],
+    "avg_order_frequency": 2.1,
+    "last_order_date": "2025-10-15"
+  },
+  {
+    "name": "Canadian Pizza Sembawang",
+    "address": "369 Sembawang road, #01-02 Sembawang cottage-758382",
+    "contact_person": "Velu",
+    "contact_number": "90265175",
+    "whatsapp_user_id": "+6590265175",
+    "usual_order_days": ["Monday", "Wednesday", "Friday"],
+    "avg_order_frequency": 3.0,
+    "last_order_date": "2025-10-14"
+  },
+  {
+    "name": "Canadian Pizza Serangoon",
+    "address": "67 Brighton Crescent S 559212",
+    "contact_person": "Mr. Nara",
+    "contact_number": "64880323",
+    "whatsapp_user_id": "+6564880323",
+    "usual_order_days": ["Wednesday", "Saturday"],
+    "avg_order_frequency": 2.0,
+    "last_order_date": "2025-10-13"
+  }
+]

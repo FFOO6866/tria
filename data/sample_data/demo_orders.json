@@ -1,0 +1,59 @@
+[
+  {
+    "order_id": "demo_001",
+    "outlet_name": "Canadian Pizza Pasir Ris",
+    "whatsapp_message": "📝 *Order Form*\n\n🔸Outlet Address: 93, pasir ris drive 3, #01-06, 519498\n🔸Contact Person: Vasanth\n🔸Contact Number: 90280519\n\n*📍Order Quantity:*\n📦 10\" Regular Box (100/bundle): 600\n📦 12\" Medium Box (100/bundle): 200\n📦 14\" XL Box (50/bundle): 400\n\n*Single Facer Liner will be provided according to the ordered quantity of boxes.\n\n*(Orders will be automatically processed for the next delivery)*",
+    "parsed_items": {
+      "boxes_10": 600,
+      "boxes_12": 200,
+      "boxes_14": 400,
+      "liner": 2400
+    },
+    "expected_total": 1296.00,
+    "is_normal": true,
+    "notes": "Primary demo order - normal quantities"
+  },
+  {
+    "order_id": "demo_002",
+    "outlet_name": "Canadian Pizza Sembawang",
+    "whatsapp_message": "📝 *Order Form*\n\n🔸Outlet Address: 369 Sembawang road, #01-02 Sembawang cottage-758382\n🔸Contact Person: Velu\n🔸Contact Number: 90265175\n\n*📍Order Quantity:*\n📦 10\" Regular Box (100/bundle): 700\n📦 12\" Medium Box (100/bundle): 200\n📦 14\" XL Box (50/bundle): 300\n\n*Single Facer Liner will be provided according to the ordered quantity of boxes.\n\n*(Orders will be automatically processed for the next delivery)*",
+    "parsed_items": {
+      "boxes_10": 700,
+      "boxes_12": 200,
+      "boxes_14": 300,
+      "liner": 2400
+    },
+    "expected_total": 1216.00,
+    "is_normal": true,
+    "notes": "Backup demo order #1 - slightly different quantities"
+  },
+  {
+    "order_id": "demo_003_anomaly",
+    "outlet_name": "Canadian Pizza Pasir Ris",
+    "whatsapp_message": "📝 *Order Form*\n\n🔸Outlet Address: 93, pasir ris drive 3, #01-06, 519498\n🔸Contact Person: Vasanth\n🔸Contact Number: 90280519\n\n*📍Order Quantity:*\n📦 10\" Regular Box (100/bundle): 6000\n📦 12\" Medium Box (100/bundle): 2000\n📦 14\" XL Box (50/bundle): 4000\n\n*Single Facer Liner will be provided according to the ordered quantity of boxes.\n\n*(Orders will be automatically processed for the next delivery)*",
+    "parsed_items": {
+      "boxes_10": 6000,
+      "boxes_12": 2000,
+      "boxes_14": 4000,
+      "liner": 24000
+    },
+    "expected_total": 12960.00,
+    "is_normal": false,
+    "notes": "Anomaly demo - 10x normal order, should trigger confirmation"
+  },
+  {
+    "order_id": "demo_004_urgent",
+    "outlet_name": "Canadian Pizza Serangoon",
+    "whatsapp_message": "URGENT! 🚨\n\n📝 *Order Form*\n\n🔸Outlet Address: 67 Brighton Crescent S 559212\n🔸Contact Person: Mr. Nara\n🔸Contact Number: 64880323\n\n*📍Order Quantity:*\n📦 10\" Regular Box (100/bundle): 300\n📦 12\" Medium Box (100/bundle): 100\n📦 14\" XL Box (50/bundle): 200\n\n*Single Facer Liner will be provided according to the ordered quantity of boxes.\n\nNeed delivery tomorrow if possible!\n\n*(Orders will be automatically processed for the next delivery)*",
+    "parsed_items": {
+      "boxes_10": 300,
+      "boxes_12": 100,
+      "boxes_14": 200,
+      "liner": 1200
+    },
+    "expected_total": 648.00,
+    "is_normal": true,
+    "is_urgent": true,
+    "notes": "Urgent order demo - should trigger escalation and SMS alert"
+  }
+]

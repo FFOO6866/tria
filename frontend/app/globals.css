@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+  }
+
+  body {
+    @apply bg-gradient-to-br from-slate-50 to-slate-100;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-lg shadow-md border border-slate-200;
+  }
+
+  .card-header {
+    @apply px-6 py-4 border-b border-slate-200;
+  }
+
+  .card-body {
+    @apply p-6;
+  }
+
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+
+  .agent-card {
+    @apply bg-white rounded-lg p-4 border-2 transition-all duration-300;
+  }
+
+  .agent-card.idle {
+    @apply border-slate-200;
+  }
+
+  .agent-card.active {
+    @apply border-current shadow-lg;
+  }
+
+  .agent-card.completed {
+    @apply border-green-400 bg-green-50;
+  }
+
+  .agent-card.error {
+    @apply border-red-400 bg-red-50;
+  }
+}
