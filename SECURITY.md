@@ -122,4 +122,4 @@ For security issues, contact:
 ---
 
 Generated: 2025-10-17
-Project: TRIA AI-BPO Order Processing System
+Project: Tria AIBPO Order Processing System

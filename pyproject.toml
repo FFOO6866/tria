@@ -1,12 +1,12 @@
 [project]
 name = "tria-aibpo"
 version = "1.0.0"
-description = "TRIA AI-BPO Platform - WhatsApp Order Processing System"
+description = "Tria AIBPO Platform - WhatsApp Order Processing System"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-    { name = "TRIA AI-BPO Team" }
+    { name = "Tria AIBPO Team" }
 ]
 
 dependencies = [

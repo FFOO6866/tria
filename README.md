@@ -1,4 +1,4 @@
-# TRIA AI-BPO Order Processing System
+# Tria AIBPO Order Processing System
 
 **Status**: Production Ready (Security Hardened)
 **Last Updated**: 2025-10-17
@@ -143,7 +143,7 @@ pytest test_production_e2e.py -v
 ## Project Structure
 
 ```
-tria-aibpo-pov/
+tria-aibpo/
 ├── src/
 │   ├── nexus_app.py          # Main Nexus application
 │   ├── models/

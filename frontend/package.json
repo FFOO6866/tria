@@ -2,7 +2,7 @@
   "name": "tria-aibpo-frontend",
   "version": "1.0.0",
   "private": true,
-  "description": "TRIA AI-BPO Multi-Agent System POV Demo Frontend",
+  "description": "Tria AIBPO Multi-Agent System POV Demo Frontend",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",

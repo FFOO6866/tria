@@ -142,9 +142,9 @@ results, run_id = runtime.execute(workflow.build())  # ALWAYS .build()
 
 ## 📋 Project-Specific Guidelines
 
-### TRIA AI-BPO POV Project
+### Tria AIBPO POV Project
 **ALWAYS refer to POV documentation before implementing:**
-- `TRIA_AIBPO_POV_SCOPE.md` - Complete requirements and scope
+- `TRIA_AIBPO_POV_SCOPE.md` - Complete requirements and scope (if exists)
 - `adr/` directory - All Architecture Decision Records
 - `REQUIREMENTS_ANALYSIS.md` - Functional/non-functional requirements
 

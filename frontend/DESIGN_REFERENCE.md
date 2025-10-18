@@ -1,4 +1,4 @@
-# TRIA AI-BPO Frontend - Design Reference
+# Tria AIBPO Frontend - Design Reference
 
 ## Visual Design Specifications
 
@@ -99,7 +99,7 @@ Shadow: sm (subtle drop shadow)
 
 Elements:
 - Logo (40x40px rounded square, gradient blue)
-- Title "TRIA AI-BPO Platform" (24px, bold)
+- Title "Tria AIBPO Platform" (24px, bold)
 - Subtitle "Multi-Agent Supply Chain Automation" (12px, slate-500)
 - Status indicator (right-aligned)
 ```

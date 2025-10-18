@@ -1,6 +1,6 @@
-# TRIA AI-BPO Platform - Frontend
+# Tria AIBPO Platform - Frontend
 
-Professional POV demonstration frontend for the TRIA AI-BPO multi-agent system. Built with React 19, Next.js 15, and Tailwind CSS.
+Professional POV demonstration frontend for the Tria AIBPO multi-agent system. Built with React 19, Next.js 15, and Tailwind CSS.
 
 ## Features
 
@@ -280,7 +280,7 @@ NEXT_PUBLIC_API_URL=https://your-backend-api.com
 
 ## License
 
-Part of the TRIA AI-BPO Platform - see main project LICENSE.
+Part of the Tria AIBPO Platform - see main project LICENSE.
 
 ## Support
 

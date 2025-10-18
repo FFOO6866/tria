@@ -2,7 +2,7 @@
 
 ## Overview
 
-The TRIA AI-BPO Platform is fully containerized with Docker, allowing you to deploy the entire stack (PostgreSQL + FastAPI Backend + Next.js Frontend) to any cloud platform independently.
+The Tria AIBPO Platform is fully containerized with Docker, allowing you to deploy the entire stack (PostgreSQL + FastAPI Backend + Next.js Frontend) to any cloud platform independently.
 
 ## Architecture
 
@@ -73,7 +73,7 @@ docker-compose down -v
 
 **Image**: `postgres:16`
 **Port**: `5433:5432` (host:container)
-**Volume**: `tria_postgres_data` (persistent)
+**Volume**: `tria_aibpo_postgres_data` (persistent)
 
 - Automatically creates database schema on first run
 - Includes health check for startup verification

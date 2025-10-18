@@ -10,10 +10,10 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - tria_postgres_data:/var/lib/postgresql/data
+      - tria_aibpo_postgres_data:/var/lib/postgresql/data
       - ./setup_postgres_docker.sql:/docker-entrypoint-initdb.d/setup.sql
     networks:
-      - tria_network
+      - tria_aibpo_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tria_admin -d tria_aibpo"]
       interval: 10s
@@ -53,7 +53,7 @@ services:
     volumes:
       - ./data:/app/data
     networks:
-      - tria_network
+      - tria_aibpo_network
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,7 +74,7 @@ services:
     ports:
       - "3000:3000"
     networks:
-      - tria_network
+      - tria_aibpo_network
     depends_on:
       - backend
     restart: unless-stopped
@@ -83,10 +83,8 @@ services:
       - "component=frontend"
 
 networks:
-  tria_network:
-    name: tria_aibpo_network
+  tria_aibpo_network:
     driver: bridge
 
 volumes:
-  tria_postgres_data:
-    name: tria_aibpo_postgres_data
+  tria_aibpo_postgres_data:
