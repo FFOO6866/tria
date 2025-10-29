@@ -1,0 +1,86 @@
+{
+  "expected_rag_results": {
+    "refund_policy_queries": [
+      {
+        "query": "What's your refund policy?",
+        "expected_keywords": ["refund", "30 days", "unused", "original packaging"],
+        "min_relevance_score": 0.7,
+        "expected_chunks": 2
+      },
+      {
+        "query": "Can I get my money back for defective products?",
+        "expected_keywords": ["defective", "full refund", "shipping costs"],
+        "min_relevance_score": 0.75,
+        "expected_chunks": 2
+      },
+      {
+        "query": "What items cannot be refunded?",
+        "expected_keywords": ["custom", "clearance", "final sale", "exceptions"],
+        "min_relevance_score": 0.7,
+        "expected_chunks": 2
+      }
+    ],
+    "cancellation_policy_queries": [
+      {
+        "query": "Can I cancel my order?",
+        "expected_keywords": ["cancel", "before production", "24-48 hours"],
+        "min_relevance_score": 0.7,
+        "expected_chunks": 2
+      },
+      {
+        "query": "How do I cancel an order?",
+        "expected_keywords": ["email", "support@triapackaging.com", "order number"],
+        "min_relevance_score": 0.75,
+        "expected_chunks": 2
+      },
+      {
+        "query": "Can urgent orders be cancelled?",
+        "expected_keywords": ["urgent", "rush", "cannot be cancelled", "immediately"],
+        "min_relevance_score": 0.7,
+        "expected_chunks": 2
+      }
+    ],
+    "shipping_policy_queries": [
+      {
+        "query": "How long does delivery take?",
+        "expected_keywords": ["delivery", "2-3 business days", "stock items"],
+        "min_relevance_score": 0.7,
+        "expected_chunks": 2
+      },
+      {
+        "query": "Do you offer free shipping?",
+        "expected_keywords": ["free shipping", "$500", "standard shipping", "$25"],
+        "min_relevance_score": 0.75,
+        "expected_chunks": 2
+      },
+      {
+        "query": "What if my delivery is damaged?",
+        "expected_keywords": ["damaged", "inspect", "photo", "replacement"],
+        "min_relevance_score": 0.7,
+        "expected_chunks": 2
+      }
+    ],
+    "multilingual_queries": [
+      {
+        "query": "你好，我想了解退款政策",
+        "language": "zh",
+        "expected_language_detected": "zh",
+        "expected_keywords": ["refund", "30 days"],
+        "min_relevance_score": 0.6
+      },
+      {
+        "query": "我可以取消订单吗？",
+        "language": "zh",
+        "expected_language_detected": "zh",
+        "expected_keywords": ["cancel", "production"],
+        "min_relevance_score": 0.6
+      }
+    ]
+  },
+  "expected_conversation_persistence": {
+    "session_fields": ["session_id", "customer_id", "language", "created_at", "updated_at"],
+    "message_fields": ["id", "session_id", "role", "content", "timestamp"],
+    "min_messages_per_test": 3,
+    "supported_languages": ["en", "zh", "ms", "ta"]
+  }
+}

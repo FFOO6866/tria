@@ -1,0 +1,19 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Circular background with gradient -->
+  <circle cx="100" cy="100" r="100" fill="url(#gradient)"/>
+
+  <!-- Define gradient -->
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0EA5E9;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3B82F6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- TRIA Text -->
+  <text x="100" y="115" font-family="Arial, sans-serif" font-size="64" font-weight="bold" fill="white" text-anchor="middle">TRIA</text>
+
+  <!-- Circular arrow symbolizing transformation -->
+  <path d="M 100 30 A 50 50 0 1 1 99.9 30" stroke="white" stroke-width="4" fill="none" opacity="0.7"/>
+  <polygon points="95,25 105,25 100,15" fill="white" opacity="0.7"/>
+</svg>

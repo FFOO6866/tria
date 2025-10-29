@@ -1,0 +1,129 @@
+{
+  "conversations": [
+    {
+      "session_id": "test-session-001",
+      "customer_id": "customer-123",
+      "language": "en",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hi, I want to know about your refund policy",
+          "timestamp": "2025-10-18T10:00:00Z"
+        },
+        {
+          "role": "assistant",
+          "content": "Hello! I'd be happy to help you with our refund policy. We offer refunds under specific conditions: products must be unused and in original packaging, and refund requests must be submitted within 30 days of delivery. Would you like to know more about any specific aspect?",
+          "timestamp": "2025-10-18T10:00:05Z"
+        },
+        {
+          "role": "user",
+          "content": "What if the product is defective?",
+          "timestamp": "2025-10-18T10:00:30Z"
+        },
+        {
+          "role": "assistant",
+          "content": "For defective products, we provide a full refund and cover the return shipping costs. You'll need to contact our customer service team at support@triapackaging.com with your order number and photos of the defect. We'll process your refund within 5-7 business days after receiving the returned items.",
+          "timestamp": "2025-10-18T10:00:35Z"
+        },
+        {
+          "role": "user",
+          "content": "Great, thank you!",
+          "timestamp": "2025-10-18T10:01:00Z"
+        }
+      ]
+    },
+    {
+      "session_id": "test-session-002",
+      "customer_id": "customer-456",
+      "language": "zh",
+      "messages": [
+        {
+          "role": "user",
+          "content": "你好，我可以取消订单吗？",
+          "timestamp": "2025-10-18T11:00:00Z"
+        },
+        {
+          "role": "assistant",
+          "content": "您好！是的，您可以取消订单。如果订单尚未开始生产，可以免费取消。生产通常在订单确认后24-48小时内开始。您需要取消哪个订单呢？",
+          "timestamp": "2025-10-18T11:00:05Z"
+        },
+        {
+          "role": "user",
+          "content": "订单号是ORD-2025-001",
+          "timestamp": "2025-10-18T11:00:20Z"
+        }
+      ]
+    },
+    {
+      "session_id": "test-session-003",
+      "customer_id": "customer-789",
+      "language": "en",
+      "messages": [
+        {
+          "role": "user",
+          "content": "How long does shipping take?",
+          "timestamp": "2025-10-18T12:00:00Z"
+        },
+        {
+          "role": "assistant",
+          "content": "Shipping timeframes vary based on the type of order:\n\n- Stock items: 2-3 business days\n- Custom orders: 5-7 business days\n- Bulk orders (over $5,000): 7-10 business days\n\nWe also offer express delivery for stock items, with same-day delivery available for orders placed before 12:00 PM. Is there anything specific you'd like to order?",
+          "timestamp": "2025-10-18T12:00:05Z"
+        }
+      ]
+    },
+    {
+      "session_id": "test-session-004",
+      "customer_id": "customer-321",
+      "language": "en",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I received damaged packaging, what should I do?",
+          "timestamp": "2025-10-18T13:00:00Z"
+        },
+        {
+          "role": "assistant",
+          "content": "I'm sorry to hear about the damaged delivery. Here's what you need to do:\n\n1. Take photos of the damaged packaging immediately\n2. Contact our customer service at support@triapackaging.com or call +65 6234 5678\n3. Provide your order number and the photos\n4. We'll process a replacement within 24 hours\n\nIf you still have the delivery driver there, you can also report the damage directly to them. Do you have your order number ready?",
+          "timestamp": "2025-10-18T13:00:05Z"
+        },
+        {
+          "role": "user",
+          "content": "Yes, it's ORD-2025-055",
+          "timestamp": "2025-10-18T13:00:20Z"
+        },
+        {
+          "role": "assistant",
+          "content": "Thank you for providing the order number ORD-2025-055. I've noted this in your case. Please send the photos of the damaged items to support@triapackaging.com with the subject line 'Damaged Delivery - ORD-2025-055'. Our team will review and arrange a replacement immediately. Is there anything else I can help you with?",
+          "timestamp": "2025-10-18T13:00:25Z"
+        }
+      ]
+    },
+    {
+      "session_id": "test-session-005",
+      "customer_id": "customer-654",
+      "language": "en",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Do you offer free shipping?",
+          "timestamp": "2025-10-18T14:00:00Z"
+        },
+        {
+          "role": "assistant",
+          "content": "Yes! We offer free shipping on orders above $500 SGD. For orders below that amount, standard shipping is $25 SGD flat rate. Would you like to place an order?",
+          "timestamp": "2025-10-18T14:00:05Z"
+        },
+        {
+          "role": "user",
+          "content": "What about express shipping?",
+          "timestamp": "2025-10-18T14:00:20Z"
+        },
+        {
+          "role": "assistant",
+          "content": "Express shipping is available for stock items only and costs $50-$150 SGD depending on the urgency:\n\n- Same-day delivery: Orders placed before 12:00 PM\n- Next-day delivery: Orders placed before 5:00 PM\n\nThe exact cost depends on your order size and delivery location. What kind of items are you looking to order?",
+          "timestamp": "2025-10-18T14:00:25Z"
+        }
+      ]
+    }
+  ]
+}

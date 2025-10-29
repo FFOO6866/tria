@@ -189,11 +189,23 @@ def extract_json_from_llm_response(response_content: str) -> Dict:
 
 
 def calculate_order_total(line_items: List[Dict], products_map: Dict[str, Dict]) -> Dict[str, Decimal]:
-    """Calculate order totals from line items using catalog pricing"""
+    """
+    Calculate order totals from line items using catalog pricing
+
+    Raises:
+        ValueError: If TAX_RATE environment variable is not configured
+    """
 
     subtotal = Decimal('0.00')
-    # NO HARDCODING - use environment variable for tax rate
-    tax_rate = Decimal(str(os.getenv('TAX_RATE', '0.08')))  # Singapore GST from config
+
+    # NO HARDCODING, NO FALLBACKS - TAX_RATE must be configured
+    tax_rate_str = os.getenv('TAX_RATE')
+    if not tax_rate_str:
+        raise ValueError(
+            "TAX_RATE environment variable is required but not configured. "
+            "Please set TAX_RATE in .env file."
+        )
+    tax_rate = Decimal(str(tax_rate_str))
 
     for item in line_items:
         sku = item.get('sku')
@@ -215,14 +227,26 @@ def calculate_order_total(line_items: List[Dict], products_map: Dict[str, Dict])
 
 
 def format_line_items_for_display(line_items: List[Dict]) -> List[str]:
-    """Format line items for agent timeline display"""
+    """
+    Format line items for agent timeline display
+
+    Raises:
+        ValueError: If required fields (sku, description) are missing
+    """
 
     formatted = []
     for item in line_items:
-        sku = item.get('sku', 'Unknown')
-        desc = item.get('description', 'Unknown Item')
+        # PRODUCTION-READY: No fallbacks - validate required fields
+        sku = item.get('sku')
+        desc = item.get('description')
         qty = item.get('quantity', 0)
-        uom = item.get('uom', 'piece')
+        uom = item.get('uom', 'piece')  # UOM can default to piece (standard unit)
+
+        if not sku:
+            raise ValueError("Line item missing required 'sku' field for display formatting")
+        if not desc:
+            raise ValueError("Line item missing required 'description' field for display formatting")
+
         formatted.append(f"{qty} x {desc} ({sku})")
 
     return formatted

@@ -194,10 +194,14 @@ def validate_production_config() -> dict:
     """
     print("Validating production configuration...")
 
-    # Required environment variables
+    # Required environment variables - NO FALLBACKS allowed
+    # All critical configuration must be explicitly set
     required_vars = [
         'DATABASE_URL',
-        'OPENAI_API_KEY'
+        'OPENAI_API_KEY',
+        'TAX_RATE',                    # Required for order totals - no default!
+        'XERO_SALES_ACCOUNT_CODE',     # Required for Xero integration - no default!
+        'XERO_TAX_TYPE'                # Required for Xero integration - no default!
     ]
 
     # Optional but recommended

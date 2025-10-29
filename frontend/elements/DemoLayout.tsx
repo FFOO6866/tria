@@ -19,7 +19,7 @@ export default function DemoLayout() {
   const [orderResult, setOrderResult] = useState<OrderResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const handleOrderSubmit = async (message: string, outletName: string) => {
+  const handleOrderSubmit = async (message: string, outletName: string): Promise<void> => {
     setIsProcessing(true);
     setOrderResult(null);
 
@@ -40,6 +40,45 @@ export default function DemoLayout() {
       };
 
       const response = await processOrder(request);
+
+      // Send agent response to chat
+      if ((window as any).__addAgentResponse) {
+        const customerServiceAgent = response.agent_timeline.find(
+          a => a.agent_name === 'Customer Service Agent'
+        );
+
+        if (customerServiceAgent && customerServiceAgent.details) {
+          // Build a friendly response message
+          let agentMessage = '✅ Order received and processed!\n\n';
+
+          if (response.details?.parsed_order) {
+            const parsed = response.details.parsed_order;
+            agentMessage += `📋 Order Summary:\n`;
+            agentMessage += `• Outlet: ${parsed.outlet_name || outletName}\n`;
+
+            if (parsed.line_items && parsed.line_items.length > 0) {
+              agentMessage += `• Items: ${parsed.line_items.length} product(s)\n`;
+              parsed.line_items.forEach((item: any, idx: number) => {
+                agentMessage += `  ${idx + 1}. ${item.quantity || 0}x ${item.description || item.sku}\n`;
+              });
+            }
+
+            if (response.details.total_boxes) {
+              agentMessage += `\n📦 Total: ${response.details.total_boxes} boxes\n`;
+            }
+
+            if (response.details.total) {
+              agentMessage += `💰 Amount: $${response.details.total.toFixed(2)}\n`;
+            }
+          }
+
+          agentMessage += '\n🤖 All agents are now coordinating to fulfill your order!';
+
+          (window as any).__addAgentResponse(agentMessage);
+        } else if (response.message) {
+          (window as any).__addAgentResponse(response.message);
+        }
+      }
 
       // Map backend agent names to frontend agent IDs
       const agentNameToId: Record<string, string> = {
@@ -118,6 +157,12 @@ export default function DemoLayout() {
     } catch (error) {
       console.error('Order processing failed:', error);
 
+      // Send error to chat
+      if ((window as any).__addAgentResponse) {
+        const errorMsg = `❌ Sorry, I encountered an error while processing your order:\n\n${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`;
+        (window as any).__addAgentResponse(errorMsg);
+      }
+
       // Mark all agents as error
       setAgentStatuses((prev) =>
         prev.map((agent) => ({
@@ -151,9 +196,11 @@ export default function DemoLayout() {
         <div className="max-w-[1920px] mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xl">T</span>
-              </div>
+              <img
+                src="/tria-logo.png"
+                alt="TRIA Logo"
+                className="w-12 h-12"
+              />
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">TRIA AI-BPO Platform</h1>
                 <p className="text-sm text-slate-500">Multi-Agent Supply Chain Automation</p>

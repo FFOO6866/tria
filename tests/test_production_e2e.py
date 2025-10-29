@@ -285,17 +285,19 @@ for result in test_results:
     print(f"\n  Test #{result['test_id']}: {result['name']}")
     print(f"    Status: {result['status']}")
     if result['status'] == 'PASSED':
-        print(f"    Order ID: {result['order_id']}")
-        print(f"    Extraction: {result['extraction_accuracy']}%")
-        print(f"    Database: {result['database_write']}")
-        print(f"    Semantic Results: {result['semantic_results']}")
-        print(f"    Total: {result['total']}")
+        print(f"    Order ID: {result.get('order_id', 'N/A')}")
+        print(f"    Extraction: {result.get('extraction_accuracy', 'N/A')}%")
+        print(f"    Database: {result.get('database_write', 'N/A')}")
+        print(f"    Semantic Results: {result.get('semantic_results', 'N/A')}")
+        print(f"    Total: {result.get('total', 'N/A')}")
     elif result['status'] == 'FAILED':
-        print(f"    Extraction: {result['extraction_accuracy']}%")
+        print(f"    Extraction: {result.get('extraction_accuracy', 'N/A')}%")
         print(f"    SKU Match: {result.get('sku_match', False)}")
         print(f"    Qty Match: {result.get('qty_match', False)}")
         print(f"    Outlet Match: {result.get('outlet_match', False)}")
         print(f"    Database: {result.get('database_write', 'UNKNOWN')}")
+    elif result['status'] == 'ERROR':
+        print(f"    Error: {result.get('error', 'Unknown error')}")
 
 # Production readiness verdict
 print(f"\n{'=' * 80}")

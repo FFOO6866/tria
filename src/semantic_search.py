@@ -116,7 +116,7 @@ def load_products_with_embeddings(database_url: str) -> List[Dict]:
 
     # Load products with embeddings
     cursor.execute("""
-        SELECT sku, description, unit_price, uom, category, stock_quantity, embedding
+        SELECT sku, description, price, unit, category, stock_quantity, embedding
         FROM products
         WHERE is_active = TRUE
         AND embedding IS NOT NULL
@@ -141,10 +141,10 @@ def load_products_with_embeddings(database_url: str) -> List[Dict]:
         products.append({
             'sku': str(row[0]),
             'description': description,
-            'unit_price': float(row[2]),
-            'uom': str(row[3]),
-            'category': str(row[4]),
-            'stock_quantity': int(row[5]),
+            'price': float(row[2]) if row[2] else 0.0,
+            'unit': str(row[3]) if row[3] else 'pieces',
+            'category': str(row[4]) if row[4] else '',
+            'stock_quantity': int(row[5]) if row[5] else 0,
             'embedding': np.array(embedding, dtype=np.float32)
         })
 
@@ -202,8 +202,8 @@ def semantic_product_search(
             results.append({
                 'sku': product['sku'],
                 'description': product['description'],
-                'unit_price': product['unit_price'],
-                'uom': product['uom'],
+                'price': product['price'],
+                'unit': product['unit'],
                 'category': product['category'],
                 'stock_quantity': product['stock_quantity'],
                 'similarity': float(similarity)
@@ -237,8 +237,8 @@ def format_search_results_for_llm(results: List[Dict]) -> str:
     for idx, product in enumerate(results, 1):
         catalog_text += f"\n[{idx}] SKU: {product['sku']} (Match: {product['similarity']*100:.1f}%)\n"
         catalog_text += f"    Description: {product['description']}\n"
-        catalog_text += f"    Price: ${product['unit_price']:.2f} per {product['uom']}\n"
-        catalog_text += f"    Stock: {product['stock_quantity']} {product['uom']}s\n"
+        catalog_text += f"    Price: ${product['price']:.2f} per {product['unit']}\n"
+        catalog_text += f"    Stock: {product['stock_quantity']} {product['unit']}s\n"
 
     catalog_text += "=" * 60
 
