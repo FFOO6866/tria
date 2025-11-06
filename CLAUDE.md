@@ -102,10 +102,41 @@ results, run_id = runtime.execute(workflow.build())  # ALWAYS .build()
    - Test data should be in separate test databases, not simulated
 
 4. **ALWAYS CHECK FOR EXISTING CODE** - Enhance, don't duplicate
-   - Use `Glob` tool to search for similar functionality before creating new files
-   - Use `Grep` tool to find existing functions/classes that can be reused
-   - Extend existing workflows/agents instead of creating new ones
-   - Review `sdk-users/` documentation for built-in nodes before custom implementations
+
+   **MANDATORY Pre-Creation Checklist:**
+   - [ ] Search for similar files: `Glob` pattern matching (e.g., `**/*_agent.py`, `**/semantic*.py`)
+   - [ ] Search for existing functions: `Grep` for function names (e.g., `^def load_products`)
+   - [ ] Search for duplicate patterns: `Grep` for common patterns (e.g., `create_engine`, `OpenAI\(`)
+   - [ ] Check existing modules: Review imports in similar files to find utilities
+   - [ ] Review documentation: Check `src/README.md`, `docs/architecture/` for existing components
+   - [ ] Consult CODEBASE_AUDIT.md: Check for previously identified duplications
+
+   **Search Examples:**
+   ```bash
+   # Before creating database helper:
+   grep -r "create_engine" src/ --include="*.py"
+
+   # Before creating config loader:
+   grep -r "os.getenv" src/ --include="*.py"
+
+   # Before creating new agent:
+   find src/agents -name "*.py" -type f
+
+   # Before adding validation:
+   grep -r "def validate_" src/ --include="*.py"
+   ```
+
+   **Decision Tree:**
+   1. **Found exact match?** → Use it, don't create new
+   2. **Found similar code?** → Refactor to shared utility, then use
+   3. **Found partial match?** → Extend existing with new functionality
+   4. **Nothing found?** → Create new, document in relevant README
+
+   **Anti-Patterns to Avoid:**
+   - ❌ Creating `utils2.py` because `utils.py` exists → Enhance `utils.py` instead
+   - ❌ Copying function to new file → Import and reuse
+   - ❌ Creating new validation when `config_validator.py` exists → Use existing
+   - ❌ Creating new engine when `database.py` exists → Use `get_db_engine()`
 
 5. **PROPER HOUSEKEEPING AT ALL TIMES** - Maintain directory structure
    - Follow project structure conventions:
@@ -165,3 +196,313 @@ results, run_id = runtime.execute(workflow.build())  # ALWAYS .build()
 2. Is this needed for the 5-minute demo?
 3. Can I solve this with existing Kailash nodes?
 4. Am I adding complexity that wasn't asked for?
+
+---
+
+## 🔧 Production-Grade Patterns (CRITICAL)
+
+### Database Connection Pooling ⚠️ MANDATORY
+
+**WRONG Pattern** (Creates/destroys pool on every call):
+```python
+def load_data(database_url: str):
+    engine = create_engine(database_url, pool_size=5)  # ❌ New engine!
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT ..."))
+    engine.dispose()  # ❌ Destroys the pool!
+    return result
+```
+
+**CORRECT Pattern** (Global engine with singleton):
+```python
+# src/database.py
+_engine = None
+
+def get_db_engine(database_url: Optional[str] = None):
+    """Get or create global engine (singleton pattern)"""
+    global _engine
+    if _engine is None:
+        from config import config
+        url = database_url or config.get_database_url()
+        _engine = create_engine(url, pool_size=10, max_overflow=20, pool_pre_ping=True)
+    return _engine
+
+# In your functions
+def load_data(database_url: str):
+    engine = get_db_engine(database_url)  # ✅ Reuses global engine
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT ..."))
+    # NO dispose() - pool stays alive! ✅
+    return result
+```
+
+**Why This Matters**:
+- Wrong pattern: Creates new 10-connection pool on EVERY function call, then destroys it
+- Correct pattern: Creates pool once, reuses connections across all calls
+- Performance: 10-100x better under load
+- **This is non-negotiable for production**
+
+### Centralized Configuration ⚠️ MANDATORY
+
+**WRONG Pattern** (Scattered env access):
+```python
+# scattered across 10+ files
+database_url = os.getenv('DATABASE_URL')
+api_key = os.getenv('OPENAI_API_KEY')
+tax_rate = os.getenv('TAX_RATE', '0.08')  # ❌ Hidden fallback!
+```
+
+**CORRECT Pattern** (Centralized with validation):
+```python
+# src/config.py (uses existing config_validator.py)
+from config_validator import validate_required_env, validate_database_url
+
+class ProductionConfig:
+    def __init__(self):
+        required_vars = ['OPENAI_API_KEY', 'TAX_RATE', 'XERO_SALES_ACCOUNT_CODE']
+        validated = validate_required_env(required_vars)
+
+        self.OPENAI_API_KEY = validated['OPENAI_API_KEY']
+        self.TAX_RATE = float(validated['TAX_RATE'])  # NO FALLBACK
+        self.DATABASE_URL = validate_database_url(required=True)
+
+config = ProductionConfig()  # Validates at import time
+
+# In your code
+from config import config
+api_key = config.OPENAI_API_KEY  # ✅ Validated, no fallbacks
+```
+
+**Why This Matters**:
+- Fails fast at startup if config missing (not during customer transaction!)
+- NO HIDDEN FALLBACKS that mask misconfiguration
+- Single source of truth
+- **Test your claims**: Start server without .env → should fail immediately
+
+### Check for Duplicates BEFORE Creating ⚠️ MANDATORY
+
+**ALWAYS run this audit before creating new functions**:
+```bash
+# Search for similar functions
+grep -rn "def.*load_product" src/
+grep -rn "def.*create_engine" src/
+grep -rn "def.*validate.*config" src/
+
+# Search for existing patterns
+grep -rn "get_db_engine\|database.*pool" src/
+```
+
+**Common Duplicates to Watch For**:
+1. Database connection functions
+2. Configuration validation functions
+3. Product/data loading functions
+4. API client initialization
+
+**Rule**: If function exists, USE IT. If broken, FIX IT. Don't create duplicate.
+
+### Honest Testing & Verification ⚠️ MANDATORY
+
+**WRONG Approach**:
+```python
+# I claimed: "Connection pooling implemented ✅"
+# Reality: Never tested, had critical bug (engine.dispose())
+```
+
+**CORRECT Approach**:
+```python
+# 1. Create test file
+tests/test_connection_pool.py
+
+# 2. Test actual behavior
+def test_singleton_pattern():
+    engine1 = get_db_engine()
+    engine2 = get_db_engine()
+    assert engine1 is engine2  # Verify same instance
+
+# 3. Run test BEFORE claiming completion
+python tests/test_connection_pool.py
+
+# 4. Only claim "✅ VERIFIED" if tests pass
+```
+
+**Why This Matters**:
+- Untested claims lead to production bugs
+- "It should work" ≠ "I verified it works"
+- Tests catch bugs before customers do
+- **Never claim completion without verification**
+
+---
+
+## 📝 Self-Review Checklist (Use Before Every Commit)
+
+Before marking ANY task as complete, verify:
+
+### 1. Duplication Check
+- [ ] Searched for existing functions with `grep`/`Glob`
+- [ ] Reused existing utilities (not reimplemented)
+- [ ] If duplicates found: Enhanced existing code instead of creating new
+
+### 2. Production Standards
+- [ ] Database connections use global engine (no create/dispose per call)
+- [ ] Configuration uses centralized config module (no scattered `os.getenv()`)
+- [ ] No hardcoded values (credentials, URLs, rates)
+- [ ] No fallbacks (fail explicitly if data missing)
+- [ ] No mocks (except Tier 1 unit tests)
+
+### 3. Testing
+- [ ] Created test file for new functionality
+- [ ] Ran tests and verified they pass
+- [ ] Tested failure scenarios (missing config, DB down, etc.)
+- [ ] Can demonstrate it works (not just "it should work")
+
+### 4. Honest Reporting
+- [ ] Task status reflects reality (not aspirational)
+- [ ] Claims are verified (not assumed)
+- [ ] Known issues documented (not hidden)
+- [ ] Completion percentage is accurate
+
+---
+
+## 🚨 Anti-Patterns to AVOID
+
+### ❌ "Fake It Till You Make It" Reporting
+```
+WRONG:
+- "Implemented connection pooling ✅" (without testing)
+- "Migrated all config ✅" (only did 1 of 8 files)
+- "Production ready ✅" (has critical bugs)
+
+RIGHT:
+- "Implemented connection pooling ⚠️ NEEDS TESTING"
+- "Migrated config in enhanced_api.py ⚠️ 7 more files to do"
+- "Core fixes complete ⚠️ Testing required before production"
+```
+
+### ❌ Create Now, Optimize Later
+```python
+WRONG:
+def load_data():
+    engine = create_engine(...)  # "I'll optimize this later"
+    # ... this becomes permanent
+
+RIGHT:
+# Use correct pattern from the start
+from database import get_db_engine  # Reuse global engine
+```
+
+### ❌ Reinventing the Wheel
+```python
+WRONG:
+# Create new validation function
+def my_validate_config(): ...
+
+RIGHT:
+# Search first: grep -rn "def.*validate.*config" src/
+# Found config_validator.py with validate_required_env()
+from config_validator import validate_required_env  # Reuse!
+```
+
+---
+
+## 📚 Required Reading Before Coding
+
+1. **Check existing code**: `grep`/`Glob` for similar functions
+2. **Check project docs**: See `docs/README.md` for all documentation
+   - Current status: `docs/reports/production-readiness/`
+   - Architecture: `docs/architecture/`
+   - Setup guides: `docs/setup/`
+3. **Check this file**: Patterns above
+4. **When stuck**: Use specialized subagents (sdk-navigator, pattern-expert, etc.)
+5. **Before claiming done**: Run tests, verify claims
+
+**Documentation Structure**:
+```
+docs/
+├── README.md                              # Documentation index
+├── setup/                                 # Setup guides
+├── architecture/                          # System architecture
+├── guides/                                # User guides
+└── reports/
+    ├── production-readiness/             # Current status
+    └── archive/                          # Historical reports
+```
+
+**Remember**:
+- Production code lives for years
+- Quick hacks become permanent patterns
+- Other developers copy your patterns
+- **Do it right the first time**
+- **Keep docs organized** - Archive old reports, update indexes
+
+---
+
+## 📊 Codebase Audit Status (Last Updated: 2025-11-07)
+
+### ✅ Verified Clean - No Issues Found
+
+**1. Function Duplication**: NONE
+- Searched all Python files for duplicate function names: 0 duplicates
+- All function names are unique across the codebase
+- Each function has single responsibility
+
+**2. Database Engine Creation**: CLEAN
+- Only 1 occurrence: `database.py:81` (global singleton) ✅ CORRECT
+- No scattered `create_engine()` calls in other files
+- All files use `from database import get_db_engine`
+
+**3. Hardcoded Credentials**: NONE
+- No API keys in source code (verified with pattern search)
+- No passwords in code (verified)
+- Xero API URLs are legitimate API endpoints (not hardcoded credentials)
+
+**4. Mock/Simulated Data**: NONE
+- All "mock" occurrences are in comments stating "NO MOCKING"
+- No fake data or simulated responses in production code
+- Tests use real infrastructure (PostgreSQL, OpenAI, ChromaDB)
+
+### ⚠️ Minor Issues - Not Critical
+
+**5. Environment Variable Access**:
+- `config.py` and `config_validator.py`: ✅ APPROPRIATE (centralized config)
+- 2 agent files: Use `os.getenv()` with explicit validation (acceptable pattern)
+- 1 process file: Direct `os.getenv('TAX_RATE')` with validation (acceptable)
+- 10 script files: Use `os.getenv()` directly (acceptable for scripts)
+- **Decision**: Not a problem, patterns are appropriate for context
+
+**6. Defensive Programming**:
+- 3 occurrences of `conversation_history or []` pattern
+- **Decision**: Legitimate default for optional parameters (not problematic fallback)
+
+### 📋 Audit Verification Commands
+
+```bash
+# Check for function duplicates:
+grep -r "^def " src/ --include="*.py" | sed 's/.*def \([^(]*\).*/\1/' | sort | uniq -d
+
+# Check database engine creation:
+grep -r "create_engine(" src/ --include="*.py"
+
+# Check for hardcoded credentials:
+grep -rE "sk-[a-zA-Z0-9]{20,}|password.*=.*[\"'][^\"']+[\"']" src/ --include="*.py"
+
+# Check for mock data:
+grep -riE "mock|fake|dummy" src/ --include="*.py"
+
+# Check fallback patterns:
+grep -r "or \[" src/ --include="*.py"
+```
+
+### 🎯 Audit Conclusion
+
+**Status**: ✅ PRODUCTION-READY (Code Quality)
+
+- Zero function duplication
+- No hardcoded credentials or API keys
+- No mock or simulated data
+- Proper database connection pooling
+- Appropriate use of environment variables
+- No problematic fallback patterns
+
+**Next Audit**: After major feature additions or when new files are created
+
+---

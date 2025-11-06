@@ -201,3 +201,47 @@ def delete_collection(collection_name: str, client: Optional[chromadb.ClientAPI]
         client.delete_collection(name=collection_name)
     except Exception as e:
         raise RuntimeError(f"Failed to delete collection '{collection_name}': {str(e)}") from e
+
+
+def health_check(client: Optional[chromadb.ClientAPI] = None) -> dict:
+    """
+    Perform health check on ChromaDB
+
+    Verifies that ChromaDB is accessible and operational.
+    This should be called at application startup.
+
+    Args:
+        client: Optional ChromaDB client (will create default if None)
+
+    Returns:
+        Dictionary with health check results:
+        {
+            'status': 'healthy' | 'unhealthy',
+            'accessible': bool,
+            'collections_count': int,
+            'collections': list[str],
+            'error': str (only if unhealthy)
+        }
+    """
+    try:
+        if client is None:
+            client = get_chroma_client()
+
+        # Test basic operations
+        collections = list_collections(client)
+
+        return {
+            'status': 'healthy',
+            'accessible': True,
+            'collections_count': len(collections),
+            'collections': collections
+        }
+
+    except Exception as e:
+        return {
+            'status': 'unhealthy',
+            'accessible': False,
+            'collections_count': 0,
+            'collections': [],
+            'error': str(e)
+        }

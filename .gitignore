@@ -25,6 +25,7 @@ MANIFEST
 .env
 .env.local
 .env.docker
+.env.production
 .venv
 env/
 venv/
@@ -56,6 +57,15 @@ test-env
 
 # Housekeeping
 .temp_cleanup/
+
+# Runtime data directories
+data/chromadb/
+data/chromadb_test/
+
+# Log files
+*.log
+frontend/*.log
+backend.log
 
 # Documentation builds
 docs/_build/

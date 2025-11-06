@@ -23,6 +23,9 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 load_dotenv(project_root / ".env")
 
+# Import centralized configuration
+from config import config
+
 # Import catalog processing functions
 from process_order_with_catalog import (
     extract_json_from_llm_response,
@@ -40,6 +43,7 @@ from semantic_search import (
 from agents.intent_classifier import IntentClassifier
 from agents.enhanced_customer_service_agent import EnhancedCustomerServiceAgent
 from rag.knowledge_base import KnowledgeBase
+from rag.chroma_client import health_check as chromadb_health_check
 
 # FastAPI imports
 from fastapi import FastAPI, HTTPException
@@ -101,13 +105,14 @@ async def startup_event():
     print("TRIA AI-BPO Enhanced Platform Starting...")
     print("=" * 60)
 
-    # PRODUCTION-READY: Validate all required environment variables
-    # NO FALLBACKS - Fail explicitly if configuration is invalid
+    # PRODUCTION-READY: Configuration validated at import time
+    # NO FALLBACKS - config module ensures all required vars are set
     try:
-        from config_validator import validate_production_config
-        config = validate_production_config()
-        database_url = config['DATABASE_URL']
+        database_url = config.get_database_url()
         print("[OK] Environment configuration validated")
+        print(f"      Database: {database_url[:30]}...")
+        print(f"      OpenAI Model: {config.OPENAI_MODEL}")
+        print(f"      Xero Configured: {config.xero_configured}")
     except Exception as e:
         print(f"[ERROR] Configuration validation failed: {e}")
         raise RuntimeError("Invalid configuration - cannot start") from e
@@ -145,7 +150,7 @@ async def startup_event():
 
     # Initialize chatbot components
     try:
-        openai_api_key = os.getenv('OPENAI_API_KEY')
+        openai_api_key = config.OPENAI_API_KEY
         if not openai_api_key:
             print("[WARNING] OPENAI_API_KEY not configured - chatbot features disabled")
             intent_classifier = None
@@ -155,7 +160,7 @@ async def startup_event():
             # Initialize intent classifier
             intent_classifier = IntentClassifier(
                 api_key=openai_api_key,
-                model=os.getenv("OPENAI_MODEL", "gpt-4"),
+                model=config.OPENAI_MODEL,
                 temperature=0.3
             )
             print("[OK] IntentClassifier initialized")
@@ -163,7 +168,7 @@ async def startup_event():
             # Initialize customer service agent
             customer_service_agent = EnhancedCustomerServiceAgent(
                 api_key=openai_api_key,
-                model=os.getenv("OPENAI_MODEL", "gpt-4"),
+                model=config.OPENAI_MODEL,
                 temperature=0.7,
                 enable_rag=True,
                 enable_escalation=True
@@ -174,6 +179,15 @@ async def startup_event():
             knowledge_base = KnowledgeBase(api_key=openai_api_key)
             print("[OK] KnowledgeBase initialized")
 
+            # Perform ChromaDB health check
+            chroma_health = chromadb_health_check()
+            if chroma_health['status'] == 'healthy':
+                print(f"[OK] ChromaDB health check passed")
+                print(f"     Collections: {chroma_health['collections_count']} ({', '.join(chroma_health['collections']) if chroma_health['collections'] else 'none'})")
+            else:
+                print(f"[WARNING] ChromaDB health check failed: {chroma_health.get('error', 'Unknown error')}")
+                print("         RAG features may be limited")
+
     except Exception as e:
         print(f"[WARNING] Failed to initialize chatbot components: {e}")
         print("         Chatbot features will be disabled")
@@ -182,7 +196,7 @@ async def startup_event():
         knowledge_base = None
 
     print("\n[SUCCESS] Enhanced Platform ready!")
-    print(f"API Docs: http://localhost:{os.getenv('API_PORT', 8000)}/docs")
+    print(f"API Docs: http://localhost:{config.API_PORT}/docs")
     print("=" * 60 + "\n")
 
 
@@ -472,8 +486,8 @@ async def chatbot_endpoint(request: ChatbotRequest):
                 try:
                     # AGENT 1: Semantic Search for Products
                     agent_start = time.time()
-                    database_url = os.getenv('DATABASE_URL')
-                    openai_key = os.getenv('OPENAI_API_KEY')
+                    database_url = config.get_database_url()
+                    openai_key = config.OPENAI_API_KEY
 
                     logger.info(f"[AGENT 1] Customer Service - Running semantic search...")
                     relevant_products = semantic_product_search(
@@ -944,8 +958,8 @@ async def process_order_enhanced(request: OrderRequest):
         agent_start = time.time()
 
         # Semantic search for relevant products based on message
-        database_url = os.getenv('DATABASE_URL')
-        openai_key = os.getenv('OPENAI_API_KEY')
+        database_url = config.get_database_url()
+        openai_key = config.OPENAI_API_KEY
 
         print(f"\n[>>] Running semantic search on customer message...")
         print(f"     Message: {request.whatsapp_message[:100]}...")
@@ -1099,7 +1113,7 @@ Now process the customer message and return the JSON:
         parse_workflow = WorkflowBuilder()
         parse_workflow.add_node("LLMAgentNode", "parse_order", {
             "provider": "openai",
-            "model": os.getenv("OPENAI_MODEL", "gpt-4")
+            "model": config.OPENAI_MODEL
         })
 
         parse_results, parse_run_id = runtime.execute(
@@ -1218,8 +1232,7 @@ Now process the customer message and return the JSON:
 
         # Read actual Excel file for inventory tracking
         # PRODUCTION-READY: No fallback - fail explicitly if file doesn't exist
-        inventory_file = Path(os.getenv('MASTER_INVENTORY_FILE',
-                                        './data/inventory/Master_Inventory_File_2025.xlsx'))
+        inventory_file = config.MASTER_INVENTORY_FILE
 
         excel_details = []
         if not inventory_file.exists():
@@ -1303,7 +1316,7 @@ Now process the customer message and return the JSON:
         total = totals['total']
 
         # Check Xero credentials
-        xero_configured = os.getenv('XERO_REFRESH_TOKEN') and os.getenv('XERO_TENANT_ID')
+        xero_configured = config.xero_configured
 
         agent_end = time.time()
 
@@ -1771,14 +1784,8 @@ async def download_invoice(order_id: int):
             })
 
         # Calculate tax and total - NO HARDCODING, NO FALLBACKS
-        # TAX_RATE must be configured in .env - fail explicitly if missing
-        tax_rate_str = os.getenv('TAX_RATE')
-        if not tax_rate_str:
-            raise HTTPException(
-                status_code=500,
-                detail="TAX_RATE environment variable is required but not configured. Please set TAX_RATE in .env file."
-            )
-        tax_rate = Decimal(str(tax_rate_str))
+        # TAX_RATE validated at startup via config module
+        tax_rate = Decimal(str(config.TAX_RATE))
         tax = subtotal * tax_rate
         total = subtotal + tax
 
@@ -1882,11 +1889,11 @@ async def post_invoice_to_xero(order_id: int):
         if not db or not runtime:
             raise HTTPException(status_code=503, detail="Service not initialized")
 
-        # Check Xero credentials
-        xero_refresh_token = os.getenv('XERO_REFRESH_TOKEN')
-        xero_tenant_id = os.getenv('XERO_TENANT_ID')
-        xero_client_id = os.getenv('XERO_CLIENT_ID')
-        xero_client_secret = os.getenv('XERO_CLIENT_SECRET')
+        # Check Xero credentials (from centralized config)
+        xero_refresh_token = config.XERO_REFRESH_TOKEN
+        xero_tenant_id = config.XERO_TENANT_ID
+        xero_client_id = config.XERO_CLIENT_ID
+        xero_client_secret = config.XERO_CLIENT_SECRET
 
         if not all([xero_refresh_token, xero_tenant_id, xero_client_id, xero_client_secret]):
             return {
@@ -2002,20 +2009,9 @@ async def post_invoice_to_xero(order_id: int):
             subtotal += line_total
 
             # Build Xero line item with catalog data
-            # NO HARDCODING, NO FALLBACKS - Xero config must be set
-            xero_account_code = os.getenv('XERO_SALES_ACCOUNT_CODE')
-            xero_tax_type = os.getenv('XERO_TAX_TYPE')
-
-            if not xero_account_code:
-                raise HTTPException(
-                    status_code=500,
-                    detail="XERO_SALES_ACCOUNT_CODE environment variable is required but not configured. Please set it in .env file."
-                )
-            if not xero_tax_type:
-                raise HTTPException(
-                    status_code=500,
-                    detail="XERO_TAX_TYPE environment variable is required but not configured. Please set it in .env file."
-                )
+            # NO HARDCODING, NO FALLBACKS - Xero config validated at startup
+            xero_account_code = config.XERO_SALES_ACCOUNT_CODE
+            xero_tax_type = config.XERO_TAX_TYPE
 
             xero_line_items.append({
                 'Description': description,
@@ -2026,14 +2022,8 @@ async def post_invoice_to_xero(order_id: int):
             })
 
         # Calculate tax and total - NO HARDCODING, NO FALLBACKS
-        # TAX_RATE must be configured in .env - fail explicitly if missing
-        tax_rate_str = os.getenv('TAX_RATE')
-        if not tax_rate_str:
-            raise HTTPException(
-                status_code=500,
-                detail="TAX_RATE environment variable is required but not configured. Please set TAX_RATE in .env file."
-            )
-        tax_rate = Decimal(str(tax_rate_str))
+        # TAX_RATE validated at startup via config module
+        tax_rate = Decimal(str(config.TAX_RATE))
         tax = subtotal * tax_rate
         total = subtotal + tax
 
@@ -2219,8 +2209,8 @@ async def root():
 
 def main():
     """Run the enhanced API server"""
-    port = int(os.getenv('ENHANCED_API_PORT', 8001))  # Port 8001 to avoid conflict
-    host = os.getenv('API_HOST', '0.0.0.0')
+    port = config.ENHANCED_API_PORT  # Port 8001 to avoid conflict with main API
+    host = config.API_HOST
 
     print(f"\nStarting TRIA AI-BPO Enhanced API Server on http://{host}:{port}")
     print(f"API Documentation: http://localhost:{port}/docs\n")

@@ -9,6 +9,8 @@ Features:
 - Handles typos and language variations
 - Semantic understanding of product descriptions
 - Fast numpy-based cosine similarity for small catalogs
+- Connection pooling for scalability
+- Parameterized queries for SQL injection protection
 - Production ready - no mocks, no hardcoding
 
 Usage:
@@ -24,9 +26,16 @@ Usage:
 import os
 import json
 import numpy as np
+import logging
 from typing import List, Dict, Optional
-import psycopg2
+from sqlalchemy import text
 from openai import OpenAI
+
+# Import centralized database connection
+from database import get_db_engine
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 def cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
@@ -86,72 +95,80 @@ def load_products_with_embeddings(database_url: str) -> List[Dict]:
     """
     Load all active products with their embeddings from database
 
+    Uses centralized database engine with global connection pooling.
+    Parameterized queries prevent SQL injection.
+
     Args:
-        database_url: PostgreSQL connection string
+        database_url: PostgreSQL connection string (passed to get_db_engine)
 
     Returns:
         List of product dictionaries with embeddings
+
+    Raises:
+        RuntimeError: If database connection or query fails
     """
-    # Parse connection string
-    parts = database_url.replace('postgresql://', '').split('@')
-    user_pass = parts[0].split(':')
-    host_db = parts[1].split('/')
-    user = user_pass[0]
-    password = user_pass[1]
-    host_port = host_db[0].split(':')
-    host = host_port[0]
-    port = host_port[1] if len(host_port) > 1 else 5432
-    database = host_db[1]
+    try:
+        # Get global engine with connection pooling
+        # Engine is reused across all calls for optimal performance
+        engine = get_db_engine(database_url)
 
-    # Connect
-    conn = psycopg2.connect(
-        host=host,
-        port=port,
-        database=database,
-        user=user,
-        password=password,
-        client_encoding='UTF8'
-    )
-    cursor = conn.cursor()
+        # Use parameterized query for SQL injection protection
+        # Note: This query has no user input, but good practice for consistency
+        query = text("""
+            SELECT sku, description, unit_price, uom, category, stock_quantity, embedding
+            FROM products
+            WHERE is_active = :is_active
+            AND embedding IS NOT NULL
+            AND embedding != :empty_string
+            ORDER BY sku
+        """)
 
-    # Load products with embeddings
-    cursor.execute("""
-        SELECT sku, description, price, unit, category, stock_quantity, embedding
-        FROM products
-        WHERE is_active = TRUE
-        AND embedding IS NOT NULL
-        AND embedding != ''
-        ORDER BY sku
-    """)
+        products = []
 
-    products = []
-    for row in cursor.fetchall():
-        # Parse embedding from JSON
-        embedding_json = row[6]
-        try:
-            embedding = json.loads(embedding_json)
-        except:
-            continue  # Skip products with invalid embeddings
+        # Use context manager for automatic connection cleanup
+        # Connection is returned to pool, NOT destroyed
+        with engine.connect() as conn:
+            result = conn.execute(query, {
+                'is_active': True,
+                'empty_string': ''
+            })
 
-        # Clean description
-        description = str(row[1])
-        description = description.replace('\u2300', 'diameter ')
-        description = description.replace('⌀', 'diameter ')
+            for row in result:
+                # Parse embedding from JSON
+                embedding_json = row[6]
+                try:
+                    embedding = json.loads(embedding_json)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Skipping product {row[0]}: Invalid embedding JSON - {str(e)}")
+                    continue  # Skip products with invalid embeddings
 
-        products.append({
-            'sku': str(row[0]),
-            'description': description,
-            'price': float(row[2]) if row[2] else 0.0,
-            'unit': str(row[3]) if row[3] else 'pieces',
-            'category': str(row[4]) if row[4] else '',
-            'stock_quantity': int(row[5]) if row[5] else 0,
-            'embedding': np.array(embedding, dtype=np.float32)
-        })
+                # Clean description (remove problematic Unicode)
+                description = str(row[1])
+                description = description.replace('\u2300', 'diameter ')
+                description = description.replace('⌀', 'diameter ')
 
-    cursor.close()
-    conn.close()
+                products.append({
+                    'sku': str(row[0]),
+                    'description': description,
+                    'unit_price': float(row[2]) if row[2] else 0.0,
+                    'uom': str(row[3]) if row[3] else 'pieces',
+                    'category': str(row[4]) if row[4] else '',
+                    'stock_quantity': int(row[5]) if row[5] else 0,
+                    'embedding': np.array(embedding, dtype=np.float32)
+                })
 
-    return products
+        # NO engine.dispose() - Keep pool alive for reuse!
+        # This is the key fix: connections are returned to pool, not destroyed
+
+        return products
+
+    except Exception as e:
+        logger.error(f"Database error while loading products: {str(e)}")
+        raise RuntimeError(
+            f"Failed to load products from database. "
+            f"Please check database connection and table structure. "
+            f"Error: {str(e)}"
+        ) from e
 
 
 def semantic_product_search(
@@ -202,8 +219,8 @@ def semantic_product_search(
             results.append({
                 'sku': product['sku'],
                 'description': product['description'],
-                'price': product['price'],
-                'unit': product['unit'],
+                'unit_price': product['unit_price'],
+                'uom': product['uom'],
                 'category': product['category'],
                 'stock_quantity': product['stock_quantity'],
                 'similarity': float(similarity)
@@ -237,8 +254,8 @@ def format_search_results_for_llm(results: List[Dict]) -> str:
     for idx, product in enumerate(results, 1):
         catalog_text += f"\n[{idx}] SKU: {product['sku']} (Match: {product['similarity']*100:.1f}%)\n"
         catalog_text += f"    Description: {product['description']}\n"
-        catalog_text += f"    Price: ${product['price']:.2f} per {product['unit']}\n"
-        catalog_text += f"    Stock: {product['stock_quantity']} {product['unit']}s\n"
+        catalog_text += f"    Price: ${product['unit_price']:.2f} per {product['uom']}\n"
+        catalog_text += f"    Stock: {product['stock_quantity']} {product['uom']}s\n"
 
     catalog_text += "=" * 60
 

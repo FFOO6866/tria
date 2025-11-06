@@ -4,68 +4,91 @@ Dynamic Catalog-Based Order Processing
 
 Updated order processing logic that uses product catalog from database
 instead of hardcoded SKUs and pricing.
+
+Features:
+- Connection pooling for scalability
+- Parameterized queries for SQL injection protection
+- Production-ready error handling
 """
 
 import os
 import json
 import time
-import psycopg2
+import logging
 from typing import Dict, List, Any
 from decimal import Decimal
+from sqlalchemy import text
+
+# Import centralized database connection
+from database import get_db_engine
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 def load_product_catalog(database_url: str) -> List[Dict[str, Any]]:
-    """Load all active products from database catalog"""
+    """
+    Load all active products from database catalog
 
-    # Parse connection string
-    parts = database_url.replace('postgresql://', '').split('@')
-    user_pass = parts[0].split(':')
-    host_db = parts[1].split('/')
-    user = user_pass[0]
-    password = user_pass[1]
-    host_port = host_db[0].split(':')
-    host = host_port[0]
-    port = host_port[1] if len(host_port) > 1 else 5432
-    database = host_db[1]
+    Uses centralized database engine with global connection pooling.
+    Parameterized queries prevent SQL injection.
 
-    # Connect and query with UTF-8 encoding
-    conn = psycopg2.connect(
-        host=host,
-        port=port,
-        database=database,
-        user=user,
-        password=password,
-        client_encoding='UTF8'
-    )
-    cursor = conn.cursor()
+    Args:
+        database_url: PostgreSQL connection string (passed to get_db_engine)
 
-    cursor.execute("""
-        SELECT sku, description, unit_price, uom, category, stock_quantity
-        FROM products
-        WHERE is_active = TRUE
-        ORDER BY sku
-    """)
+    Returns:
+        List of product dictionaries
 
-    products = []
-    for row in cursor.fetchall():
-        # Clean description to remove problematic Unicode characters
-        description = str(row[1])
-        # Replace diameter symbol and other special chars with text equivalents
-        description = description.replace('\u2300', 'diameter ')
-        description = description.replace('⌀', 'diameter ')
+    Raises:
+        RuntimeError: If database connection or query fails
+    """
+    try:
+        # Get global engine with connection pooling
+        # Engine is reused across all calls for optimal performance
+        engine = get_db_engine(database_url)
 
-        products.append({
-            'sku': str(row[0]),
-            'description': description,
-            'unit_price': float(row[2]),
-            'uom': str(row[3]),
-            'category': str(row[4]),
-            'stock_quantity': int(row[5])
-        })
+        # Use parameterized query for SQL injection protection
+        query = text("""
+            SELECT sku, description, unit_price, uom, category, stock_quantity
+            FROM products
+            WHERE is_active = :is_active
+            ORDER BY sku
+        """)
 
-    cursor.close()
-    conn.close()
+        products = []
 
-    return products
+        # Use context manager for automatic connection cleanup
+        # Connection is returned to pool, NOT destroyed
+        with engine.connect() as conn:
+            result = conn.execute(query, {'is_active': True})
+
+            for row in result:
+                # Clean description to remove problematic Unicode characters
+                description = str(row[1])
+                # Replace diameter symbol and other special chars with text equivalents
+                description = description.replace('\u2300', 'diameter ')
+                description = description.replace('⌀', 'diameter ')
+
+                products.append({
+                    'sku': str(row[0]),
+                    'description': description,
+                    'unit_price': float(row[2]),
+                    'uom': str(row[3]),
+                    'category': str(row[4]),
+                    'stock_quantity': int(row[5])
+                })
+
+        # NO engine.dispose() - Keep pool alive for reuse!
+        # This is the key fix: connections are returned to pool, not destroyed
+
+        return products
+
+    except Exception as e:
+        logger.error(f"Database error while loading product catalog: {str(e)}")
+        raise RuntimeError(
+            f"Failed to load product catalog from database. "
+            f"Please check database connection and products table structure. "
+            f"Error: {str(e)}"
+        ) from e
 
 
 def format_catalog_for_llm(products: List[Dict]) -> str:
