@@ -451,8 +451,8 @@ def build_intent_classification_prompt(
     if conversation_history and len(conversation_history) > 0:
         prompt += "CONVERSATION HISTORY:\n"
         for msg in conversation_history[-5:]:  # Last 5 messages for context
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            role = msg.get("role") or "unknown"  # Handle None values
+            content = msg.get("content") or ""
             prompt += f"{role.capitalize()}: {content}\n"
         prompt += "\n"
 
