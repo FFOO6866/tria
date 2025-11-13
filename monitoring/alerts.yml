@@ -1,0 +1,265 @@
+# Prometheus Alert Rules for Tria AI-BPO
+# ========================================
+#
+# These rules define when alerts should fire based on metrics.
+# Alerts are sent to Alertmanager, which then routes to PagerDuty/Slack/email.
+
+groups:
+  # ============================================================================
+  # API PERFORMANCE ALERTS
+  # ============================================================================
+  - name: api_performance
+    interval: 30s
+    rules:
+      # Alert: High P95 Latency
+      - alert: HighP95Latency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "High P95 latency detected"
+          description: "P95 latency is {{ $value | humanizeDuration }} (threshold: 10s)"
+          runbook: "Check /docs/OPERATIONAL_RUNBOOK.md#issue-2-slow-response-times"
+
+      # Alert: Critical P95 Latency
+      - alert: CriticalP95Latency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 30
+        for: 2m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "CRITICAL: Very high P95 latency"
+          description: "P95 latency is {{ $value | humanizeDuration }} (threshold: 30s)"
+          runbook: "URGENT: Check backend logs and restart if needed"
+
+      # Alert: High Error Rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+          runbook: "Check /docs/OPERATIONAL_RUNBOOK.md#issue-1-api-returns-http-500"
+
+      # Alert: Critical Error Rate
+      - alert: CriticalErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.20
+        for: 2m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "CRITICAL: Very high error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 20%)"
+          runbook: "URGENT: System may be down - check immediately"
+
+  # ============================================================================
+  # CACHE PERFORMANCE ALERTS
+  # ============================================================================
+  - name: cache_performance
+    interval: 1m
+    rules:
+      # Alert: Low Cache Hit Rate
+      - alert: LowCacheHitRate
+        expr: rate(cache_hits_total[10m]) / (rate(cache_hits_total[10m]) + rate(cache_misses_total[10m])) < 0.40
+        for: 10m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} (threshold: 40%)"
+          runbook: "Check Redis status and cache configuration"
+
+      # Alert: Redis Down
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been down for more than 1 minute"
+          runbook: "Check /docs/OPERATIONAL_RUNBOOK.md#issue-4-cache-not-working"
+
+  # ============================================================================
+  # DATABASE ALERTS
+  # ============================================================================
+  - name: database
+    interval: 1m
+    rules:
+      # Alert: Database Down
+      - alert: DatabaseDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "Database has been down for more than 1 minute"
+          runbook: "Check /docs/OPERATIONAL_RUNBOOK.md#issue-3-database-connection-errors"
+
+      # Alert: Too Many Database Connections
+      - alert: TooManyDatabaseConnections
+        expr: pg_stat_activity_count > 28
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "High database connection count"
+          description: "{{ $value }} connections active (threshold: 28, max: 30)"
+          runbook: "Connection pool may be exhausted - check for connection leaks"
+
+      # Alert: Slow Queries
+      - alert: SlowDatabaseQueries
+        expr: rate(pg_stat_statements_mean_exec_time_seconds[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "Average query time is {{ $value }}s (threshold: 5s)"
+          runbook: "Check for missing indexes or expensive queries"
+
+  # ============================================================================
+  # SYSTEM RESOURCE ALERTS
+  # ============================================================================
+  - name: system_resources
+    interval: 1m
+    rules:
+      # Alert: High Memory Usage
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }} (threshold: 80%)"
+          runbook: "Check for memory leaks or consider upgrading instance size"
+
+      # Alert: Critical Memory Usage
+      - alert: CriticalMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.90
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "CRITICAL: Very high memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }} (threshold: 90%)"
+          runbook: "URGENT: System may crash - restart backend or upgrade instance"
+
+      # Alert: High CPU Usage
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% (threshold: 80%)"
+          runbook: "Check for CPU-intensive operations or increased load"
+
+      # Alert: Disk Space Low
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.20
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Disk space running low"
+          description: "Disk space is {{ $value | humanizePercentage }} available (threshold: 20%)"
+          runbook: "Clean up logs, Docker images, or old backups"
+
+      # Alert: Disk Space Critical
+      - alert: DiskSpaceCritical
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.10
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "CRITICAL: Disk space nearly full"
+          description: "Disk space is {{ $value | humanizePercentage }} available (threshold: 10%)"
+          runbook: "URGENT: Free up disk space immediately"
+
+  # ============================================================================
+  # SERVICE AVAILABILITY ALERTS
+  # ============================================================================
+  - name: service_availability
+    interval: 30s
+    rules:
+      # Alert: Backend Service Down
+      - alert: BackendServiceDown
+        expr: up{job="tria-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "Backend service is down"
+          description: "Tria backend has been down for more than 1 minute"
+          runbook: "Check Docker container status and logs"
+
+      # Alert: Health Check Failing
+      - alert: HealthCheckFailing
+        expr: probe_success{job="health-check"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "Health check endpoint failing"
+          description: "/health endpoint has been failing for 2 minutes"
+          runbook: "System is unhealthy - check all dependencies"
+
+  # ============================================================================
+  # BUSINESS METRICS ALERTS (if available)
+  # ============================================================================
+  - name: business_metrics
+    interval: 5m
+    rules:
+      # Alert: No Requests (System Idle or Down)
+      - alert: NoRequestsDetected
+        expr: rate(http_requests_total[10m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "No requests detected"
+          description: "System has received no requests for 10 minutes"
+          runbook: "Check if system is down or if traffic has stopped"
+
+      # Alert: High OpenAI API Costs
+      - alert: HighOpenAICosts
+        expr: sum(rate(openai_api_calls_total[1h])) * 0.02 * 24 * 30 > 5000
+        for: 1h
+        labels:
+          severity: warning
+          component: cost
+        annotations:
+          summary: "High OpenAI API costs projected"
+          description: "Projected monthly cost: ${{ $value }} (threshold: $5000)"
+          runbook: "Check cache hit rate and optimize API usage"
+
+# Note: These alerts assume you have metrics being exported in Prometheus format.
+# To enable these alerts, you need to:
+# 1. Add prometheus-fastapi-instrumentator to your backend
+# 2. Set up exporters for Postgres, Redis, and Node
+# 3. Configure custom metrics for cache hits/misses
+# 4. Expose /metrics endpoint on your backend

@@ -1,0 +1,90 @@
+# Prometheus Configuration for Tria AI-BPO
+# ==========================================
+#
+# This configuration sets up Prometheus to scrape metrics from the
+# Tria backend API and generate alerts based on defined rules.
+#
+# Setup Instructions:
+# 1. Install Prometheus: https://prometheus.io/download/
+# 2. Copy this file to prometheus/prometheus.yml
+# 3. Start Prometheus: ./prometheus --config.file=prometheus.yml
+# 4. Access UI: http://localhost:9090
+
+global:
+  scrape_interval: 15s      # Scrape metrics every 15 seconds
+  evaluation_interval: 15s  # Evaluate rules every 15 seconds
+  external_labels:
+    cluster: 'tria-aibpo-prod'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'localhost:9093'  # Alertmanager endpoint
+
+# Load alert rules
+rule_files:
+  - 'alerts.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Scrape Tria backend API metrics
+  - job_name: 'tria-backend'
+    metrics_path: '/metrics'  # If you add a /metrics endpoint
+    static_configs:
+      - targets:
+          - 'localhost:8003'  # Backend API
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'tria-backend'
+
+  # Scrape PostgreSQL metrics (if postgres_exporter is set up)
+  - job_name: 'postgres'
+    static_configs:
+      - targets:
+          - 'localhost:9187'  # postgres_exporter default port
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'tria-postgres'
+
+  # Scrape Redis metrics (if redis_exporter is set up)
+  - job_name: 'redis'
+    static_configs:
+      - targets:
+          - 'localhost:9121'  # redis_exporter default port
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'tria-redis'
+
+  # Scrape Node metrics (system metrics)
+  - job_name: 'node'
+    static_configs:
+      - targets:
+          - 'localhost:9100'  # node_exporter default port
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'tria-server'
+
+  # Scrape Docker container metrics (if cAdvisor is set up)
+  - job_name: 'docker'
+    static_configs:
+      - targets:
+          - 'localhost:8080'  # cAdvisor default port
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'tria-docker'
+
+# Note: To expose metrics from the Tria backend, you need to add a /metrics endpoint
+# that returns Prometheus-format metrics. Example using prometheus-fastapi-instrumentator:
+#
+# from prometheus_fastapi_instrumentator import Instrumentator
+#
+# app = FastAPI()
+# Instrumentator().instrument(app).expose(app)

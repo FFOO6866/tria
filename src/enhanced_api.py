@@ -12,6 +12,7 @@ NO MOCKING - All agent details show real system activity.
 import os
 import sys
 import json
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
@@ -19,6 +20,9 @@ import time
 import pandas as pd
 from datetime import datetime
 from decimal import Decimal
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Setup paths
 project_root = Path(__file__).parent.parent
@@ -377,9 +381,15 @@ async def health_check():
     health_status = {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "2.0.0",
-        "circuit_breakers": get_circuit_breaker_status()
+        "version": "2.0.0"
     }
+
+    # Check circuit breaker status (with error handling)
+    try:
+        health_status["circuit_breakers"] = get_circuit_breaker_status()
+    except Exception as e:
+        logger.warning(f"Failed to get circuit breaker status: {str(e)}")
+        health_status["circuit_breakers"] = {"error": "unavailable"}
 
     # Check database connection
     try:
@@ -404,7 +414,9 @@ async def health_check():
         health_status["redis"] = "connected"
     except Exception as e:
         health_status["redis"] = f"error: {str(e)}"
-        health_status["status"] = "degraded"
+        # Only set degraded if not already unhealthy (preserve severity)
+        if health_status["status"] != "unhealthy":
+            health_status["status"] = "degraded"
 
     # Check Xero API connectivity (PRODUCTION-CRITICAL)
     # Load balancers need to know if Xero is reachable
@@ -421,10 +433,14 @@ async def health_check():
                 health_status["xero"] = "connected"
             else:
                 health_status["xero"] = f"error: HTTP {response.status_code}"
-                health_status["status"] = "degraded"
+                # Only set degraded if not already unhealthy (preserve severity)
+                if health_status["status"] != "unhealthy":
+                    health_status["status"] = "degraded"
         except Exception as e:
             health_status["xero"] = f"error: {str(e)}"
-            health_status["status"] = "degraded"
+            # Only set degraded if not already unhealthy (preserve severity)
+            if health_status["status"] != "unhealthy":
+                health_status["status"] = "degraded"
             logger.warning(f"Xero health check failed: {str(e)}")
     else:
         health_status["xero"] = "not_configured"
