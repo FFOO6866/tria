@@ -89,6 +89,12 @@ examples/output/
 /examples/customer_*.csv
 /examples/processed_data.csv
 
+# Test results and temporary data
+data/*.json
+data/*.jsonl
+data/eval/
+data/chromadb_cache/
+
 # Task tracking storage (if they exist outside examples/data)
 **/task_storage/
 **/tasks/runs/
