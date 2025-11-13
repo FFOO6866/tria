@@ -60,6 +60,8 @@ jobs:
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy to EC2
+        env:
+          EC2_INSTANCE_SIZE: ${{ secrets.EC2_INSTANCE_SIZE || 'small' }}
         run: |
           ssh ${{ env.DEPLOY_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
             set -e
@@ -79,17 +81,26 @@ jobs:
             # Note: Secrets should already be in .env on the server
             # This is just a reminder to check
 
+            # Determine which docker-compose file to use
+            COMPOSE_FILE="docker-compose.yml"
+            if [ "${{ secrets.EC2_INSTANCE_SIZE }}" == "small" ] || [ -z "${{ secrets.EC2_INSTANCE_SIZE }}" ]; then
+              COMPOSE_FILE="docker-compose.small.yml"
+              echo "📦 Using memory-optimized configuration for t3.small (2GB RAM)"
+            else
+              echo "📦 Using standard configuration for t3.medium+ (4GB+ RAM)"
+            fi
+
             # Pull latest Docker images (if using pre-built images)
             echo "🐳 Pulling Docker images..."
-            docker-compose pull || true
+            docker-compose -f $COMPOSE_FILE pull || true
 
             # Build and start containers
-            echo "🔨 Building and starting containers..."
-            docker-compose up -d --build
+            echo "🔨 Building and starting containers with $COMPOSE_FILE..."
+            docker-compose -f $COMPOSE_FILE up -d --build
 
             # Wait for services to be ready
             echo "⏳ Waiting for services to start..."
-            sleep 10
+            sleep 15
 
             # Check if backend is healthy
             echo "🏥 Checking health..."
@@ -97,7 +108,11 @@ jobs:
 
             # Show running containers
             echo "📊 Running containers:"
-            docker-compose ps
+            docker-compose -f $COMPOSE_FILE ps
+
+            # Show memory usage
+            echo "💾 Memory usage:"
+            docker stats --no-stream
 
             # Clean up old images
             echo "🧹 Cleaning up old Docker images..."
