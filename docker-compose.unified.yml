@@ -1,0 +1,319 @@
+# Docker Compose for Tria AI-BPO
+# =============================================================================
+# UNIFIED CONFIGURATION - Works for both 2GB (t3.small) and 4GB+ (t3.medium+)
+#
+# Environment-aware deployment controlled by DEPLOYMENT_SIZE variable:
+# - "small":  2GB RAM - Backend only (postgres, redis, backend)
+# - "medium": 4GB+ RAM - Full stack (postgres, redis, backend, frontend, nginx)
+#
+# Docker Compose AUTOMATICALLY reads .env file in same directory.
+# NO need to pass environment variables manually!
+#
+# Usage:
+#   Small (2GB):  docker-compose up -d
+#   Medium (4GB): docker-compose --profile full-stack up -d
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # =============================================================================
+  # PostgreSQL Database (Always runs)
+  # =============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: tria_aibpo_postgres
+    environment:
+      # Core settings (from .env)
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+      # Memory optimization (auto-configured based on DEPLOYMENT_SIZE in .env)
+      # small:  128MB/256MB/4MB/64MB
+      # medium: 256MB/512MB/16MB/128MB
+      POSTGRES_SHARED_BUFFERS: ${POSTGRES_SHARED_BUFFERS:-256MB}
+      POSTGRES_EFFECTIVE_CACHE_SIZE: ${POSTGRES_EFFECTIVE_CACHE_SIZE:-512MB}
+      POSTGRES_WORK_MEM: ${POSTGRES_WORK_MEM:-16MB}
+      POSTGRES_MAINTENANCE_WORK_MEM: ${POSTGRES_MAINTENANCE_WORK_MEM:-128MB}
+
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+
+    volumes:
+      - tria_aibpo_postgres_data:/var/lib/postgresql/data
+      - ./setup_postgres_docker.sql:/docker-entrypoint-initdb.d/setup.sql
+
+    networks:
+      - tria_aibpo_network
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tria_admin} -d ${POSTGRES_DB:-tria_aibpo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    restart: unless-stopped
+
+    labels:
+      - "project=tria-aibpo"
+      - "component=database"
+      - "deployment-size=${DEPLOYMENT_SIZE:-small}"
+
+  # =============================================================================
+  # Redis Cache (Always runs)
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: tria_aibpo_redis
+
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-change_this_redis_password_456}
+      --maxmemory ${REDIS_MAX_MEMORY:-512mb}
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+    volumes:
+      - tria_aibpo_redis_data:/data
+
+    networks:
+      - tria_aibpo_network
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-change_this_redis_password_456}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    restart: unless-stopped
+
+    labels:
+      - "project=tria-aibpo"
+      - "component=cache"
+      - "deployment-size=${DEPLOYMENT_SIZE:-small}"
+
+  # =============================================================================
+  # FastAPI Backend (Always runs)
+  # =============================================================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: tria_aibpo_backend
+
+    environment:
+      # Database connection
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tria_admin}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tria_aibpo}
+
+      # Redis configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change_this_redis_password_456}
+      REDIS_DB: 0
+
+      # OpenAI API (CRITICAL - Required)
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4-turbo-preview}
+
+      # Xero Integration (Optional)
+      XERO_CLIENT_ID: ${XERO_CLIENT_ID:-}
+      XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET:-}
+      XERO_TENANT_ID: ${XERO_TENANT_ID:-}
+      XERO_REFRESH_TOKEN: ${XERO_REFRESH_TOKEN:-}
+
+      # Business Configuration
+      TAX_RATE: ${TAX_RATE:-0.09}
+      XERO_SALES_ACCOUNT_CODE: ${XERO_SALES_ACCOUNT_CODE:-200}
+      XERO_TAX_TYPE: ${XERO_TAX_TYPE:-TAX001}
+
+      # Security
+      SECRET_KEY: ${SECRET_KEY}
+
+      # Monitoring (Optional)
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+
+      # Validation Limits
+      MAX_QUANTITY_PER_ITEM: ${MAX_QUANTITY_PER_ITEM:-10000}
+      MAX_ORDER_TOTAL: ${MAX_ORDER_TOTAL:-100000.00}
+      MAX_LINE_ITEMS: ${MAX_LINE_ITEMS:-100}
+      MIN_ORDER_TOTAL: ${MIN_ORDER_TOTAL:-0.01}
+
+      # Application Settings
+      PYTHONUNBUFFERED: 1
+      PYTHONPATH: /app/src
+
+      # Performance (auto-configured based on DEPLOYMENT_SIZE)
+      # small:  2 workers, 2 threads
+      # medium: 4 workers, 4 threads
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
+      GUNICORN_WORKER_CLASS: ${GUNICORN_WORKER_CLASS:-sync}
+
+    ports:
+      - "${BACKEND_PORT:-8003}:8003"
+
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - tria_aibpo_chromadb:/app/data/chromadb_cache
+
+    networks:
+      - tria_aibpo_network
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: ${BACKEND_START_PERIOD:-60s}
+
+    restart: unless-stopped
+
+    labels:
+      - "project=tria-aibpo"
+      - "component=backend"
+      - "deployment-size=${DEPLOYMENT_SIZE:-small}"
+
+  # =============================================================================
+  # Next.js Frontend (Only for full-stack profile)
+  # =============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+
+    container_name: tria_aibpo_frontend
+
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8003
+      NODE_ENV: production
+
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+
+    networks:
+      - tria_aibpo_network
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+    labels:
+      - "project=tria-aibpo"
+      - "component=frontend"
+      - "deployment-size=medium"
+
+    # Only start with full-stack profile
+    profiles:
+      - full-stack
+
+  # =============================================================================
+  # Nginx Reverse Proxy (Only for full-stack profile)
+  # =============================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: tria_aibpo_nginx
+
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+
+    networks:
+      - tria_aibpo_network
+
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    restart: unless-stopped
+
+    labels:
+      - "project=tria-aibpo"
+      - "component=nginx"
+      - "deployment-size=medium"
+
+    # Only start with full-stack profile
+    profiles:
+      - full-stack
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  tria_aibpo_network:
+    driver: bridge
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  tria_aibpo_postgres_data:
+    driver: local
+  tria_aibpo_redis_data:
+    driver: local
+  tria_aibpo_chromadb:
+    driver: local
+
+# =============================================================================
+# DEPLOYMENT GUIDE
+# =============================================================================
+#
+# For t3.small (2GB RAM) - Backend only:
+#   1. Set in .env: DEPLOYMENT_SIZE=small
+#   2. Run: docker-compose up -d
+#   3. Access: http://YOUR_IP:8003
+#
+# For t3.medium+ (4GB+ RAM) - Full stack:
+#   1. Set in .env: DEPLOYMENT_SIZE=medium
+#   2. Run: docker-compose --profile full-stack up -d
+#   3. Access: http://YOUR_IP (via nginx on port 80)
+#
+# Memory Allocation Examples:
+#
+# SMALL (2GB total):
+#   PostgreSQL:    400 MB (POSTGRES_SHARED_BUFFERS=128MB)
+#   Redis:         256 MB (REDIS_MAX_MEMORY=200mb)
+#   Backend:      1200 MB (GUNICORN_WORKERS=2)
+#   System:       ~192 MB
+#
+# MEDIUM (4GB total):
+#   PostgreSQL:    800 MB (POSTGRES_SHARED_BUFFERS=256MB)
+#   Redis:         512 MB (REDIS_MAX_MEMORY=512mb)
+#   Backend:      1200 MB (GUNICORN_WORKERS=4)
+#   Frontend:      512 MB
+#   Nginx:         256 MB
+#   System:       ~720 MB
+#
+# Docker Compose automatically reads .env file!
+# No need to pass environment variables manually.
+# =============================================================================
