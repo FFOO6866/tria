@@ -140,7 +140,7 @@ print("[OK] Connected")
 # Load products without embeddings
 print(f"\n[>>] Loading products from database...")
 cursor.execute("""
-    SELECT sku, name, description, category
+    SELECT sku, description, description, category
     FROM products
     WHERE is_active = TRUE
     AND (embedding IS NULL OR embedding = '')

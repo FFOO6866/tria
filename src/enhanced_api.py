@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 import time
 import pandas as pd
 from datetime import datetime
+from decimal import Decimal
 
 # Setup paths
 project_root = Path(__file__).parent.parent
@@ -49,9 +50,25 @@ from rag.chroma_client import health_check as chromadb_health_check
 
 # Import new advanced components
 from services.multilevel_cache import get_cache, MultiLevelCache
+from cache.chat_response_cache import get_chat_cache, ChatResponseCache
 from prompts.prompt_manager import get_prompt_manager, PromptManager
 from api.routes.chat_stream import router as chat_stream_router
 from api.middleware.sse_middleware import SSEMiddleware
+
+# Production infrastructure imports
+from production import (
+    TransactionManager,
+    OrderValidator,
+    sanitize_for_sql,
+    validate_decimal_precision,
+    init_error_tracking,
+    track_error,
+    IdempotencyMiddleware,
+    get_circuit_breaker_status
+)
+
+# Workflow timeout protection (prevents hanging workflows)
+from utils.timeout import execute_with_timeout, WorkflowTimeoutError
 
 # FastAPI imports
 from fastapi import FastAPI, HTTPException
@@ -95,6 +112,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add idempotency middleware for duplicate prevention
+app.add_middleware(IdempotencyMiddleware)
+
 # Add SSE middleware for streaming support
 app.add_middleware(SSEMiddleware, timeout=60)
 
@@ -107,13 +127,14 @@ customer_service_agent: Optional[EnhancedCustomerServiceAgent] = None
 async_customer_service_agent: Optional[AsyncCustomerServiceAgent] = None
 knowledge_base: Optional[KnowledgeBase] = None
 cache: Optional[MultiLevelCache] = None
+chat_cache: Optional[ChatResponseCache] = None
 prompt_manager: Optional[PromptManager] = None
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize DataFlow and runtime on startup"""
-    global db, runtime, session_manager, intent_classifier, customer_service_agent, async_customer_service_agent, knowledge_base, cache, prompt_manager
+    global db, runtime, session_manager, intent_classifier, customer_service_agent, async_customer_service_agent, knowledge_base, cache, chat_cache, prompt_manager
 
     print("=" * 60)
     print("TRIA AI-BPO Enhanced Platform Starting...")
@@ -130,6 +151,17 @@ async def startup_event():
     except Exception as e:
         print(f"[ERROR] Configuration validation failed: {e}")
         raise RuntimeError("Invalid configuration - cannot start") from e
+
+    # Initialize error tracking (Sentry)
+    try:
+        init_error_tracking(app)
+        if config.SENTRY_DSN:
+            print(f"[OK] Error tracking initialized (Environment: {config.ENVIRONMENT})")
+        else:
+            print("[INFO] Error tracking disabled (SENTRY_DSN not configured)")
+    except Exception as e:
+        print(f"[WARNING] Failed to initialize error tracking: {e}")
+        print("[INFO] Continuing without error tracking")
 
     # Initialize DataFlow (optional - only needed for order processing, not chatbot)
     try:
@@ -176,6 +208,20 @@ async def startup_event():
         print(f"[WARNING] Failed to initialize cache: {e}")
         print("         Caching disabled, performance may be impacted")
         cache = None
+
+    # Initialize Redis-backed chat response cache (P0 performance fix)
+    try:
+        chat_cache = get_chat_cache()
+        cache_backend = "redis" if not chat_cache.redis_cache.using_fallback else "in-memory"
+        print(f"[OK] Redis chat response cache initialized (backend: {cache_backend})")
+        print(f"     - Response TTL: 30 minutes")
+        print(f"     - Intent TTL: 1 hour")
+        print(f"     - Policy TTL: 24 hours")
+        print(f"     - Expected: 5x faster, 80% cost reduction")
+    except Exception as e:
+        print(f"[WARNING] Failed to initialize chat cache: {e}")
+        print("         Chat response caching disabled")
+        chat_cache = None
 
     # Initialize prompt management system
     try:
@@ -320,10 +366,81 @@ class ChatbotResponse(BaseModel):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {
+    """
+    Health check endpoint for load balancers and monitoring.
+
+    Returns system health status and circuit breaker states.
+    """
+    from database import get_db_engine
+    from sqlalchemy import text
+
+    health_status = {
         "status": "healthy",
-        "database": "connected" if db else "not_initialized",
+        "timestamp": datetime.now().isoformat(),
+        "version": "2.0.0",
+        "circuit_breakers": get_circuit_breaker_status()
+    }
+
+    # Check database connection
+    try:
+        engine = get_db_engine()
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        health_status["database"] = "connected"
+    except Exception as e:
+        health_status["database"] = f"error: {str(e)}"
+        health_status["status"] = "unhealthy"
+
+    # Check Redis connection
+    try:
+        import redis
+        r = redis.Redis(
+            host=config.REDIS_HOST,
+            port=config.REDIS_PORT,
+            password=config.REDIS_PASSWORD if config.REDIS_PASSWORD else None,
+            db=config.REDIS_DB
+        )
+        r.ping()
+        health_status["redis"] = "connected"
+    except Exception as e:
+        health_status["redis"] = f"error: {str(e)}"
+        health_status["status"] = "degraded"
+
+    # Check Xero API connectivity (PRODUCTION-CRITICAL)
+    # Load balancers need to know if Xero is reachable
+    if config.xero_configured:
+        try:
+            from integrations.xero_client import XeroAPIClient
+            xero_client = XeroAPIClient()
+
+            # Make a lightweight API call to verify connectivity
+            # GET /Organisation is a simple endpoint that just returns tenant info
+            response = xero_client._make_request('GET', '/Organisation')
+
+            if response.status_code == 200:
+                health_status["xero"] = "connected"
+            else:
+                health_status["xero"] = f"error: HTTP {response.status_code}"
+                health_status["status"] = "degraded"
+        except Exception as e:
+            health_status["xero"] = f"error: {str(e)}"
+            health_status["status"] = "degraded"
+            logger.warning(f"Xero health check failed: {str(e)}")
+    else:
+        health_status["xero"] = "not_configured"
+
+    # Check ChromaDB
+    try:
+        # Simple health check - verify knowledge base is initialized
+        if knowledge_base and hasattr(knowledge_base, 'collection'):
+            health_status["chromadb"] = "connected"
+        else:
+            health_status["chromadb"] = "not_initialized"
+    except Exception as e:
+        health_status["chromadb"] = f"error: {str(e)}"
+
+    # Include existing component status
+    health_status["components"] = {
         "runtime": "initialized" if runtime else "not_initialized",
         "session_manager": "initialized" if session_manager else "not_initialized",
         "chatbot": {
@@ -340,6 +457,8 @@ async def health_check():
         }
     }
 
+    return health_status
+
 
 @app.get("/api/outlets")
 async def list_outlets():
@@ -354,7 +473,12 @@ async def list_outlets():
             "limit": 100
         })
 
-        results, _ = runtime.execute(workflow.build())
+        # Execute workflow with timeout protection
+        results, _ = execute_with_timeout(
+            runtime.execute,
+            args=(workflow.build(),),
+            timeout_seconds=60
+        )
         outlets_result = results.get('list_outlets', [])
 
         # Handle different result structures
@@ -434,7 +558,12 @@ async def chatbot_endpoint(request: ChatbotRequest):
                 "filters": {"name": request.outlet_name},
                 "limit": 1
             })
-            outlet_results, _ = runtime.execute(outlets_workflow.build())
+            # Execute workflow with timeout protection
+            outlet_results, _ = execute_with_timeout(
+                runtime.execute,
+                args=(outlets_workflow.build(),),
+                timeout_seconds=60
+            )
             outlet_data = outlet_results.get('get_outlets', [])
 
             if isinstance(outlet_data, list) and len(outlet_data) > 0:
@@ -500,6 +629,46 @@ async def chatbot_endpoint(request: ChatbotRequest):
             # Only include messages with valid role and content
             if role and content:
                 formatted_history.append({"role": role, "content": content})
+
+        # ====================================================================
+        # CACHE CHECK: Try to get cached response
+        # ====================================================================
+        cached_response = None
+        if chat_cache:
+            try:
+                cached_response = chat_cache.get_response(
+                    message=request.message,
+                    conversation_history=formatted_history
+                )
+
+                if cached_response:
+                    # Cache hit! Return cached response immediately
+                    logger.info(f"[CACHE HIT] Returning cached response for: {request.message[:50]}...")
+
+                    # Update metadata to indicate cached response
+                    if "metadata" not in cached_response:
+                        cached_response["metadata"] = {}
+                    cached_response["metadata"]["from_cache"] = True
+                    cached_response["metadata"]["cache_hit_time"] = time.time() - start_time
+                    cached_response["session_id"] = created_session_id
+
+                    # Return ChatbotResponse from cached data
+                    return ChatbotResponse(
+                        success=True,
+                        session_id=created_session_id,
+                        message=cached_response.get("message", cached_response.get("response_text", "")),
+                        intent=cached_response.get("intent", "unknown"),
+                        confidence=cached_response.get("confidence", 1.0),
+                        language=request.language or "en",
+                        citations=cached_response.get("citations", []),
+                        mode="chatbot",
+                        agent_timeline=cached_response.get("agent_timeline"),
+                        order_id=cached_response.get("order_id"),
+                        metadata=cached_response.get("metadata", {})
+                    )
+            except Exception as cache_error:
+                logger.warning(f"Cache check failed: {cache_error}")
+                # Continue with normal flow if cache check fails
 
         # Classify intent
         intent_result = intent_classifier.classify_intent(
@@ -671,15 +840,48 @@ Return a JSON object with:
                         end_time=time.time()
                     ))
 
+                    # VALIDATION: Validate order inputs before saving
+                    try:
+                        # Convert to Decimal with proper precision
+                        subtotal_dec = validate_decimal_precision(Decimal(str(subtotal)))
+                        tax_dec = validate_decimal_precision(Decimal(str(tax)))
+                        total_dec = validate_decimal_precision(Decimal(str(total)))
+
+                        # Validate order against business rules
+                        OrderValidator.validate_order(line_items, total_dec)
+
+                        print(f"[VALIDATION] Order validation passed: {len(line_items)} items, total ${float(total_dec):.2f}")
+
+                    except ValueError as validation_error:
+                        print(f"[VALIDATION ERROR] Order validation failed: {str(validation_error)}")
+                        # Track error to Sentry
+                        track_error(validation_error, {
+                            "user_id": request.user_id,
+                            "message": request.message,
+                            "line_items_count": len(line_items),
+                            "total_amount": float(total)
+                        })
+                        # Return error response
+                        return {
+                            "intent": "order_placement",
+                            "response": f"Order validation failed: {str(validation_error)}. Please check your quantities and totals.",
+                            "agent_timeline": agent_timeline,
+                            "conversation_context": None,
+                            "session_id": session_id
+                        }
+
                     # Create order in database
-                    outlet_name = parsed_order.get('outlet_name', 'Unknown')
+                    outlet_name_parsed = parsed_order.get('outlet_name', 'Unknown')
+                    outlet_name_safe = sanitize_for_sql(outlet_name_parsed)  # Prevent SQL injection
+                    print(f"[SANITIZATION] Sanitized outlet name: '{outlet_name_parsed}' → '{outlet_name_safe}'")
                     created_order_id = None
                     outlet_id = None
+                    outlet_name_full = None  # Full name from database for Xero
 
                     print(f"\n{'='*60}")
                     print(f"[ORDER CREATION DEBUG] Starting order creation")
                     print(f"[ORDER CREATION DEBUG] Parsed order: {parsed_order}")
-                    print(f"[ORDER CREATION DEBUG] Outlet name from GPT-4: '{outlet_name}'")
+                    print(f"[ORDER CREATION DEBUG] Outlet name from GPT-4: '{outlet_name_parsed}'")
                     print(f"{'='*60}\n")
 
                     # Find outlet using direct SQL query
@@ -689,20 +891,23 @@ Return a JSON object with:
 
                     try:
                         with engine.connect() as conn:
-                            # Query outlet by name (case-insensitive partial match)
+                            # Query outlet by name (case-insensitive, handles both "A&W Jewel" and "A&W - Jewel")
+                            # Strip hyphens and spaces for flexible matching
                             query = text("""
                                 SELECT id, name FROM outlets
-                                WHERE LOWER(name) LIKE LOWER(:name_pattern)
+                                WHERE REPLACE(REPLACE(LOWER(name), '-', ''), ' ', '')
+                                LIKE REPLACE(REPLACE(LOWER(:name_pattern), '-', ''), ' ', '')
                                 LIMIT 1
                             """)
-                            print(f"[ORDER CREATION DEBUG] Searching for outlet with pattern: '%{outlet_name}%'")
-                            result = conn.execute(query, {'name_pattern': f'%{outlet_name}%'})
+                            print(f"[ORDER CREATION DEBUG] Searching for outlet with pattern: '%{outlet_name_safe}%'")
+                            result = conn.execute(query, {'name_pattern': f'%{outlet_name_safe}%'})
                             outlet_row = result.fetchone()
                             if outlet_row:
                                 outlet_id = outlet_row[0]
-                                print(f"[ORDER CREATION DEBUG] SUCCESS: Found outlet: {outlet_row[1]} (ID: {outlet_id})")
+                                outlet_name_full = outlet_row[1]  # Store full name from database
+                                print(f"[ORDER CREATION DEBUG] SUCCESS: Found outlet: {outlet_name_full} (ID: {outlet_id})")
                             else:
-                                print(f"[ORDER CREATION DEBUG] ERROR: No outlet found matching: '{outlet_name}'")
+                                print(f"[ORDER CREATION DEBUG] ERROR: No outlet found matching: '{outlet_name_parsed}'")
                     except Exception as e:
                         print(f"[ORDER CREATION DEBUG] EXCEPTION finding outlet: {str(e)}")
                         import traceback
@@ -736,7 +941,7 @@ Return a JSON object with:
                                     'outlet_id': outlet_id,
                                     'whatsapp_message': request.message,
                                     'parsed_items': json.dumps(parsed_order),
-                                    'total_amount': float(total),
+                                    'total_amount': float(total_dec),  # Use validated decimal
                                     'status': 'completed',
                                     'anomaly_detected': is_large_order,
                                     'escalated': False,
@@ -757,16 +962,76 @@ Return a JSON object with:
                     else:
                         print(f"[ORDER CREATION DEBUG] ERROR: Skipping order creation - no outlet_id found")
 
+                    # =================================================================
+                    # XERO INTEGRATION: Draft Order → Invoice Workflow (if configured)
+                    # =================================================================
+                    xero_workflow_success = False
+                    xero_invoice_id = None
+                    xero_draft_order_id = None
+
+                    if created_order_id and outlet_id and outlet_name_full and config.xero_configured:
+                        try:
+                            logger.info(f"[XERO] Starting Xero workflow for order {created_order_id}")
+                            logger.info(f"[XERO] Customer: {outlet_name_full}")
+                            from integrations.xero_order_orchestrator import XeroOrderOrchestrator
+
+                            xero_orchestrator = XeroOrderOrchestrator()
+
+                            # Build Xero-compatible order data using FULL outlet name from database
+                            # e.g., "A&W - Jewel" not just "Jewel"
+                            xero_order_data = {
+                                'outlet_name': outlet_name_full,  # Use full database name
+                                'line_items': []
+                            }
+
+                            # Convert line items to Xero format
+                            for item in line_items:
+                                sku = item.get('sku')
+                                if sku in products_map:
+                                    product = products_map[sku]
+                                    xero_order_data['line_items'].append({
+                                        'item_code': sku,
+                                        'description': product.get('description', ''),
+                                        'quantity': item.get('quantity', 0),
+                                        'unit_price': float(product.get('unit_price', 0))
+                                    })
+
+                            # Execute Xero workflow
+                            xero_result = xero_orchestrator.execute_workflow(xero_order_data)
+
+                            if xero_result['success']:
+                                xero_workflow_success = True
+                                xero_invoice_id = xero_result.get('invoice_id')
+                                xero_draft_order_id = xero_result.get('draft_order_id')
+
+                                # Merge Xero agent timeline with our timeline
+                                xero_agent_timeline = xero_result.get('agent_timeline', [])
+                                agent_timeline.extend(xero_agent_timeline)
+
+                                logger.info(f"[XERO] ✓ Workflow completed: Invoice {xero_invoice_id}")
+                            else:
+                                logger.warning(f"[XERO] Workflow failed: {xero_result.get('message')}")
+
+                        except Exception as xero_error:
+                            # Xero failure doesn't fail the order - order is already created
+                            logger.error(f"[XERO] Error: {str(xero_error)}")
+                            logger.info(f"[XERO] Order {created_order_id} saved in database, Xero sync skipped")
+                    elif created_order_id:
+                        logger.info(f"[XERO] Skipped - Xero not configured (set XERO credentials in .env)")
+
                     # AGENT 4: Inventory Manager
                     inv_start = time.time()
+                    inv_details = [
+                        "Stock check completed",
+                        f"Order ID: {created_order_id}" if created_order_id else "Order saved"
+                    ]
+                    if xero_workflow_success:
+                        inv_details.append(f"✓ Synced with Xero")
                     agent_timeline.append(AgentStatus(
                         agent_name=f"📦 Inventory Manager",
                         status="completed",
                         current_task="Verified stock and updated inventory",
-                        details=[
-                            "Stock check completed",
-                            f"Order ID: {created_order_id}" if created_order_id else "Order saved"
-                        ],
+                        details=inv_details,
                         progress=100,
                         start_time=inv_start,
                         end_time=time.time()
@@ -1046,7 +1311,8 @@ Return a JSON object with:
             f"(intent: {intent_result.intent}, citations: {len(citations)})"
         )
 
-        return ChatbotResponse(
+        # Build response object
+        response_data = ChatbotResponse(
             success=True,
             session_id=created_session_id,
             message=response_text,
@@ -1062,6 +1328,7 @@ Return a JSON object with:
                 "processing_time": f"{total_time:.2f}s",
                 "conversation_turns": len(conversation_history) // 2 + 1,
                 "user_id": user_id,
+                "from_cache": False,  # This is a fresh response
                 "components_used": [
                     "IntentClassifier",
                     "SessionManager",
@@ -1071,6 +1338,37 @@ Return a JSON object with:
                 ]
             }
         )
+
+        # ====================================================================
+        # CACHE SAVE: Store response for future requests
+        # ====================================================================
+        if chat_cache:
+            try:
+                # Prepare cache data (convert response to dict)
+                cache_data = {
+                    "message": response_text,
+                    "intent": intent_result.intent,
+                    "confidence": intent_result.confidence,
+                    "citations": citations,
+                    "agent_timeline": response_agent_timeline,
+                    "order_id": response_order_id,
+                    "metadata": response_data.metadata
+                }
+
+                # Cache for 30 minutes (1800 seconds)
+                chat_cache.set_response(
+                    message=request.message,
+                    conversation_history=formatted_history,
+                    response=cache_data,
+                    ttl=1800
+                )
+
+                logger.info(f"[CACHE SAVE] Cached response for: {request.message[:50]}...")
+            except Exception as cache_error:
+                logger.warning(f"Cache save failed: {cache_error}")
+                # Continue even if cache save fails
+
+        return response_data
 
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -1207,7 +1505,12 @@ async def process_order_enhanced(request: OrderRequest):
         # Get outlet count from database
         outlets_workflow = WorkflowBuilder()
         outlets_workflow.add_node("OutletListNode", "count_outlets", {"limit": 1000})
-        outlet_results, _ = runtime.execute(outlets_workflow.build())
+        # Execute workflow with timeout protection
+        outlet_results, _ = execute_with_timeout(
+            runtime.execute,
+            args=(outlets_workflow.build(),),
+            timeout_seconds=60
+        )
 
         outlet_data = outlet_results.get('count_outlets', [])
         if isinstance(outlet_data, list) and len(outlet_data) > 0:
@@ -1323,16 +1626,21 @@ Now process the customer message and return the JSON:
             "model": config.OPENAI_MODEL
         })
 
-        parse_results, parse_run_id = runtime.execute(
-            parse_workflow.build(),
-            parameters={
-                "parse_order": {
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": request.whatsapp_message}
-                    ]
+        # Execute workflow with timeout protection
+        parse_results, parse_run_id = execute_with_timeout(
+            runtime.execute,
+            args=(parse_workflow.build(),),
+            kwargs={
+                "parameters": {
+                    "parse_order": {
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": request.whatsapp_message}
+                        ]
+                    }
                 }
-            }
+            },
+            timeout_seconds=90  # Longer timeout for LLM calls
         )
 
         parsed_data = parse_results.get('parse_order', {})
@@ -1585,7 +1893,12 @@ Now process the customer message and return the JSON:
                 "filters": {"name": outlet_name},
                 "limit": 1
             })
-            outlet_results, _ = runtime.execute(outlets_workflow.build())
+            # Execute workflow with timeout protection
+            outlet_results, _ = execute_with_timeout(
+                runtime.execute,
+                args=(outlets_workflow.build(),),
+                timeout_seconds=60
+            )
 
             # Extract outlet data
             outlet_data = outlet_results.get('find_outlet', [])
@@ -1627,7 +1940,12 @@ Now process the customer message and return the JSON:
                 "completed_at": datetime.now()        # datetime object - correct type!
             })
 
-            order_results, _ = runtime.execute(create_order_workflow.build())
+            # Execute workflow with timeout protection
+            order_results, _ = execute_with_timeout(
+                runtime.execute,
+                args=(create_order_workflow.build(),),
+                timeout_seconds=60
+            )
             order_data = order_results.get('create_order', {})
 
             # Extract order ID
@@ -1766,7 +2084,12 @@ async def download_delivery_order(order_id: int):
             "id": order_id
         })
 
-        order_results, _ = runtime.execute(order_workflow.build())
+        # Execute workflow with timeout protection
+        order_results, _ = execute_with_timeout(
+            runtime.execute,
+            args=(order_workflow.build(),),
+            timeout_seconds=60
+        )
         order_data = order_results.get('get_order')
 
         if not order_data:
@@ -1784,7 +2107,12 @@ async def download_delivery_order(order_id: int):
             "id": outlet_id
         })
 
-        outlet_results, _ = runtime.execute(outlet_workflow.build())
+        # Execute workflow with timeout protection
+        outlet_results, _ = execute_with_timeout(
+            runtime.execute,
+            args=(outlet_workflow.build(),),
+            timeout_seconds=60
+        )
         outlet_data = outlet_results.get('get_outlet', {})
 
         # PRODUCTION-READY: No fallbacks - fail if outlet data missing
@@ -1889,7 +2217,12 @@ async def download_invoice(order_id: int):
             "id": order_id
         })
 
-        order_results, _ = runtime.execute(order_workflow.build())
+        # Execute workflow with timeout protection
+        order_results, _ = execute_with_timeout(
+            runtime.execute,
+            args=(order_workflow.build(),),
+            timeout_seconds=60
+        )
         order_data = order_results.get('get_order')
 
         if not order_data:
@@ -1907,7 +2240,12 @@ async def download_invoice(order_id: int):
             "id": outlet_id
         })
 
-        outlet_results, _ = runtime.execute(outlet_workflow.build())
+        # Execute workflow with timeout protection
+        outlet_results, _ = execute_with_timeout(
+            runtime.execute,
+            args=(outlet_workflow.build(),),
+            timeout_seconds=60
+        )
         outlet_data = outlet_results.get('get_outlet', {})
 
         # PRODUCTION-READY: No fallbacks - fail if outlet data missing
@@ -1960,7 +2298,12 @@ async def download_invoice(order_id: int):
                 "limit": 1
             })
 
-            product_results, _ = runtime.execute(product_workflow.build())
+            # Execute workflow with timeout protection
+            product_results, _ = execute_with_timeout(
+                runtime.execute,
+                args=(product_workflow.build(),),
+                timeout_seconds=60
+            )
             product_data = product_results.get('get_product', [])
 
             if isinstance(product_data, list) and len(product_data) > 0:
@@ -2121,7 +2464,12 @@ async def post_invoice_to_xero(order_id: int):
             "id": order_id
         })
 
-        order_results, _ = runtime.execute(order_workflow.build())
+        # Execute workflow with timeout protection
+        order_results, _ = execute_with_timeout(
+            runtime.execute,
+            args=(order_workflow.build(),),
+            timeout_seconds=60
+        )
         order_data = order_results.get('get_order')
 
         if not order_data:
@@ -2139,7 +2487,12 @@ async def post_invoice_to_xero(order_id: int):
             "id": outlet_id
         })
 
-        outlet_results, _ = runtime.execute(outlet_workflow.build())
+        # Execute workflow with timeout protection
+        outlet_results, _ = execute_with_timeout(
+            runtime.execute,
+            args=(outlet_workflow.build(),),
+            timeout_seconds=60
+        )
         outlet_data = outlet_results.get('get_outlet', {})
 
         # PRODUCTION-READY: No fallbacks - fail if outlet data missing
@@ -2192,7 +2545,12 @@ async def post_invoice_to_xero(order_id: int):
                 "limit": 1
             })
 
-            product_results, _ = runtime.execute(product_workflow.build())
+            # Execute workflow with timeout protection
+            product_results, _ = execute_with_timeout(
+                runtime.execute,
+                args=(product_workflow.build(),),
+                timeout_seconds=60
+            )
             product_data = product_results.get('get_product', [])
 
             if isinstance(product_data, list) and len(product_data) > 0:
@@ -2380,19 +2738,44 @@ async def cache_metrics_endpoint():
     """
     Get cache performance metrics
 
-    Returns metrics for all cache levels (L1-L4):
-    - Hit rates per level
-    - Average latency per level
-    - Cost savings from caching
-    - Total cache operations
+    Returns metrics for all cache systems:
+    - Multi-level cache (L1-L4): Hit rates, latency per level
+    - Redis chat cache: Response/intent/policy cache stats with cost savings
+    - Overall cost savings and performance improvements
     """
-    if not cache:
-        raise HTTPException(
-            status_code=503,
-            detail="Cache not initialized. Caching is disabled."
-        )
+    metrics = {}
 
-    return cache.get_metrics()
+    # Get multi-level cache metrics (L1-L4)
+    if cache:
+        try:
+            metrics["multilevel_cache"] = cache.get_metrics()
+        except Exception as e:
+            metrics["multilevel_cache"] = {"error": str(e)}
+    else:
+        metrics["multilevel_cache"] = {"status": "disabled"}
+
+    # Get Redis chat cache metrics (P0 performance fix)
+    if chat_cache:
+        try:
+            chat_metrics = chat_cache.get_metrics()
+            metrics["redis_chat_cache"] = chat_metrics
+
+            # Add cache health status
+            metrics["redis_chat_cache"]["health"] = "healthy" if chat_cache.health_check() else "unhealthy"
+
+            # Calculate total cost savings across all caches
+            total_cost_saved = chat_metrics.get("estimated_cost_saved_usd", 0)
+            if "multilevel_cache" in metrics and isinstance(metrics["multilevel_cache"], dict):
+                total_cost_saved += metrics["multilevel_cache"].get("estimated_cost_saved_usd", 0)
+
+            metrics["total_cost_saved_usd"] = round(total_cost_saved, 2)
+
+        except Exception as e:
+            metrics["redis_chat_cache"] = {"error": str(e)}
+    else:
+        metrics["redis_chat_cache"] = {"status": "disabled"}
+
+    return metrics
 
 
 @app.get("/api/v1/metrics/prompts")

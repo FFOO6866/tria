@@ -67,6 +67,12 @@ def main():
         print("\n[ERROR] OPENAI_API_KEY not found in environment")
         sys.exit(1)
 
+    # IMPORTANT: ChromaDB's OpenAIEmbeddingFunction checks for CHROMA_OPENAI_API_KEY
+    # Set it from OPENAI_API_KEY if not already set
+    if not os.getenv('CHROMA_OPENAI_API_KEY'):
+        os.environ['CHROMA_OPENAI_API_KEY'] = OPENAI_API_KEY
+        print("[OK] Set CHROMA_OPENAI_API_KEY from OPENAI_API_KEY")
+
     # Verify collections exist
     print("\n[>>] Verifying collections...")
     stats = verify_indexing(OPENAI_API_KEY)

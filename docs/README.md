@@ -27,8 +27,10 @@ Technical architecture documentation and design decisions:
 ### **[guides/](guides/)** - User & Developer Guides
 Quick-start guides and how-to documentation:
 
+- **[cache-integration-guide.md](guides/cache-integration-guide.md)** - Redis caching implementation and optimization
 - **[conversation-memory-quick-reference.md](guides/conversation_memory_quick_reference.md)** - Memory system quick reference
 - **[intent-classifier-quickstart.md](guides/INTENT_CLASSIFIER_QUICKSTART.md)** - Intent classification guide
+- **[multilevel-cache-integration.md](guides/MULTILEVEL_CACHE_INTEGRATION.md)** - Multi-tier caching architecture
 
 ### **[reports/](reports/)** - Status Reports & Audits
 
@@ -43,6 +45,8 @@ Archived status reports and implementation summaries organized by date:
 - `2024-10-17/` - Initial production audits
 - `2024-10-18/` - Feature implementation reports
 - `2024-10-23/` - Status updates and fixes
+- `2025-11-07/` - Weekly summaries and optimization reports
+- `2025-11-13/` - Load testing and validation reports
 
 ---
 
@@ -94,5 +98,5 @@ When adding documentation:
 
 ---
 
-**Last Updated**: 2025-11-07
+**Last Updated**: 2025-11-13
 **Maintainer**: Development Team

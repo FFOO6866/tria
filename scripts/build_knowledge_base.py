@@ -43,7 +43,7 @@ from src.rag.chroma_client import list_collections, get_collection_stats
 load_dotenv(project_root / ".env")
 
 # Configuration
-POLICY_DIR = project_root / "doc" / "policy"
+POLICY_DIR = project_root / "docs" / "policy"
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 
@@ -70,7 +70,7 @@ def validate_environment():
         print("VALIDATION ERRORS")
         print("=" * 70)
         for error in errors:
-            print(f"  ❌ {error}")
+            print(f"  [X] {error}")
         print("=" * 70)
         sys.exit(1)
 
@@ -87,6 +87,11 @@ def main():
         '--verify-only',
         action='store_true',
         help='Only verify existing collections without indexing'
+    )
+    parser.add_argument(
+        '--yes',
+        action='store_true',
+        help='Skip confirmation prompt for --reset'
     )
 
     args = parser.parse_args()
@@ -121,7 +126,7 @@ def main():
         sys.exit(0)
 
     # Show warning for reset
-    if args.reset:
+    if args.reset and not args.yes:
         print("\n" + "!" * 70)
         print("WARNING: --reset will DELETE all existing knowledge base data")
         print("!" * 70)
@@ -129,6 +134,8 @@ def main():
         if response.lower() != 'yes':
             print("[CANCELLED] Indexing cancelled by user")
             sys.exit(0)
+    elif args.reset and args.yes:
+        print("\n[WARNING] Resetting collections (--yes flag provided)")
 
     # Index policy documents
     try:

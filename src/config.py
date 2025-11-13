@@ -87,6 +87,11 @@ class ProductionConfig:
         self.XERO_TENANT_ID = validated_config.get('XERO_TENANT_ID')
         self.SECRET_KEY = validated_config.get('SECRET_KEY')
 
+        # Xero API settings (with defaults)
+        self.XERO_TOKEN_URL = os.getenv('XERO_TOKEN_URL', 'https://identity.xero.com/connect/token')
+        self.XERO_API_URL = os.getenv('XERO_API_URL', 'https://api.xero.com/api.xro/2.0')
+        self.XERO_RATE_LIMIT_PER_MINUTE = int(os.getenv('XERO_RATE_LIMIT_PER_MINUTE', '60'))
+
         # ====================================================================
         # OPTIONAL CONFIGURATION WITH DEFAULTS
         # ====================================================================
@@ -96,14 +101,15 @@ class ProductionConfig:
         self.OPENAI_TEMPERATURE = float(os.getenv('OPENAI_TEMPERATURE', '0.7'))
         self.OPENAI_MAX_TOKENS = int(os.getenv('OPENAI_MAX_TOKENS', '2000'))
 
-        # File paths with defaults
-        self.MASTER_INVENTORY_FILE = Path(os.getenv(
+        # File paths with defaults (relative to project root, not src/)
+        project_root = Path(__file__).parent.parent  # Go up from src/ to project root
+        self.MASTER_INVENTORY_FILE = project_root / Path(os.getenv(
             'MASTER_INVENTORY_FILE',
-            './data/inventory/Master_Inventory_File_2025.xlsx'
+            'data/inventory/Master_Inventory_File_2025.xlsx'
         ))
-        self.DO_TEMPLATE_FILE = Path(os.getenv(
+        self.DO_TEMPLATE_FILE = project_root / Path(os.getenv(
             'DO_TEMPLATE_FILE',
-            './data/templates/DO_Template.xlsx'
+            'data/templates/DO_Template.xlsx'
         ))
 
         # API server settings
@@ -113,6 +119,23 @@ class ProductionConfig:
 
         # Logging
         self.LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+
+        # Redis configuration (required for idempotency)
+        self.REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+        self.REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
+        self.REDIS_DB = int(os.getenv('REDIS_DB', '0'))
+        self.REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', '')  # Empty string for no password
+
+        # Sentry error tracking (optional)
+        self.SENTRY_DSN = os.getenv('SENTRY_DSN')  # None if not set
+        self.ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')
+
+        # Production validation limits (optional overrides)
+        from decimal import Decimal
+        self.MAX_QUANTITY_PER_ITEM = int(os.getenv('MAX_QUANTITY_PER_ITEM', '10000'))
+        self.MAX_ORDER_TOTAL = Decimal(os.getenv('MAX_ORDER_TOTAL', '100000.00'))
+        self.MAX_LINE_ITEMS = int(os.getenv('MAX_LINE_ITEMS', '100'))
+        self.MIN_ORDER_TOTAL = Decimal(os.getenv('MIN_ORDER_TOTAL', '0.01'))
 
         # Validate critical file paths exist (if specified)
         self._validate_file_paths()

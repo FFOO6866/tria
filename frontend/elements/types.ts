@@ -109,6 +109,9 @@ export interface ChatbotResponse {
   language: string;
   citations?: RAGCitation[];
   mode: ChatMode;
+  metadata?: Record<string, any>;
+  agent_timeline?: AgentStatus[];  // For order processing workflow visualization
+  order_id?: number;  // When an order is created
   context?: Record<string, any>;
   error?: string;
 }

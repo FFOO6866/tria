@@ -9,6 +9,7 @@ interface OrderInputPanelProps {
   onSubmit?: (message: string, outlet: string) => Promise<void>;
   isProcessing?: boolean;
   onAgentResponse?: (response: string) => void;
+  onAgentTimeline?: (timeline: any[]) => void;  // For displaying agent activity
   mode?: 'chatbot' | 'order';  // 'chatbot' for intelligent Q&A, 'order' for legacy order processing
 }
 
@@ -24,6 +25,7 @@ export default function OrderInputPanel({
   onSubmit,
   isProcessing = false,
   onAgentResponse,
+  onAgentTimeline,
   mode = 'chatbot'
 }: OrderInputPanelProps) {
   const [message, setMessage] = useState('');
@@ -139,6 +141,11 @@ export default function OrderInputPanel({
           // Notify parent if provided
           if (onAgentResponse) {
             onAgentResponse(response.message);
+          }
+
+          // Pass agent timeline for activity visualization
+          if (onAgentTimeline && response.agent_timeline) {
+            onAgentTimeline(response.agent_timeline);
           }
         } catch (error) {
           // Add error message to chat

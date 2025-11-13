@@ -23,7 +23,7 @@ Usage:
         result = conn.execute(text("SELECT ..."), params)
 """
 
-from sqlalchemy import create_engine, Engine
+from sqlalchemy import create_engine, Engine, text
 from sqlalchemy.pool import QueuePool
 from typing import Optional
 import logging

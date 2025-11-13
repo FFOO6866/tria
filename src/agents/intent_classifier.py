@@ -100,17 +100,18 @@ class IntentClassifier:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gpt-4-turbo-preview",
+        model: str = "gpt-3.5-turbo",
         temperature: float = 0.3,
-        timeout: int = 60
+        timeout: int = 30
     ):
         """
         Initialize intent classifier
 
         Args:
             api_key: OpenAI API key (falls back to OPENAI_API_KEY env var)
-            model: GPT-4 model to use (default: gpt-4-turbo-preview)
-            temperature: Temperature for GPT-4 (0.0-1.0, lower = more deterministic)
+            model: Model to use (default: gpt-3.5-turbo for speed/cost optimization)
+                   Intent classification is simple enough for GPT-3.5
+            temperature: Temperature for model (0.0-1.0, lower = more deterministic)
             timeout: API timeout in seconds
 
         Raises:

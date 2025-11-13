@@ -19,6 +19,67 @@ export default function DemoLayout() {
   const [orderResult, setOrderResult] = useState<OrderResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Handler for agent timeline updates from chatbot mode
+  const handleAgentTimeline = (timeline: any[]) => {
+    if (!timeline || timeline.length === 0) return;
+
+    // Map backend agent names to frontend IDs
+    const agentNameToId: Record<string, string> = {
+      '🎧 Customer Service': 'customer-service',
+      '🎯 Operations Orchestrator': 'orchestrator',
+      '💰 Finance Controller': 'finance',
+      '📦 Inventory Manager': 'inventory',
+      '🚚 Delivery Coordinator': 'delivery',
+    };
+
+    // Update agents with real data from backend
+    const updatedAgents: AgentStatus[] = timeline.map((backendAgent) => {
+      const agentId = agentNameToId[backendAgent.agent_name] || 'customer-service';
+
+      return {
+        id: agentId as any,
+        name: backendAgent.agent_name,
+        status: backendAgent.status as any,
+        progress: backendAgent.progress,
+        tasks: [],
+        details: backendAgent.details,
+        current_task: backendAgent.current_task,
+        start_time: backendAgent.start_time,
+        end_time: backendAgent.end_time,
+      };
+    });
+
+    // Fill in any missing agents as idle
+    const allAgentIds = ['customer-service', 'orchestrator', 'finance', 'inventory', 'delivery'];
+    const processedIds = new Set(updatedAgents.map(a => a.id));
+
+    allAgentIds.forEach(id => {
+      if (!processedIds.has(id)) {
+        const agentNames: Record<string, string> = {
+          'customer-service': '🎧 Customer Service',
+          'orchestrator': '🎯 Operations Orchestrator',
+          'finance': '💰 Finance Controller',
+          'inventory': '📦 Inventory Manager',
+          'delivery': '🚚 Delivery Coordinator',
+        };
+
+        updatedAgents.push({
+          id: id as any,
+          name: agentNames[id],
+          status: 'idle',
+          progress: 0,
+          tasks: [],
+        });
+      }
+    });
+
+    // Sort by agent order
+    const agentOrder = ['customer-service', 'orchestrator', 'finance', 'inventory', 'delivery'];
+    updatedAgents.sort((a, b) => agentOrder.indexOf(a.id) - agentOrder.indexOf(b.id));
+
+    setAgentStatuses(updatedAgents);
+  };
+
   const handleOrderSubmit = async (message: string, outletName: string): Promise<void> => {
     setIsProcessing(true);
     setOrderResult(null);
@@ -223,7 +284,11 @@ export default function DemoLayout() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-140px)]">
           {/* Left Column: Order Input */}
           <div className="lg:col-span-1">
-            <OrderInputPanel onSubmit={handleOrderSubmit} isProcessing={isProcessing} />
+            <OrderInputPanel
+              onSubmit={handleOrderSubmit}
+              isProcessing={isProcessing}
+              onAgentTimeline={handleAgentTimeline}
+            />
           </div>
 
           {/* Middle Column: Agent Activity */}

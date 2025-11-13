@@ -18,6 +18,7 @@ Collections:
 """
 
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 import chromadb
@@ -29,17 +30,25 @@ from chromadb.utils import embedding_functions
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 CHROMA_PERSIST_DIR = PROJECT_ROOT / "data" / "chromadb"
 
+# Global client cache (thread-safe singleton)
+_client_cache = {}
+_client_lock = threading.Lock()
+
 
 def get_chroma_client(persist_directory: Optional[Path] = None) -> chromadb.ClientAPI:
     """
-    Get or create ChromaDB client with persistent storage
+    Get or create ChromaDB client with persistent storage (thread-safe singleton)
+
+    Uses caching to avoid race conditions when multiple threads try to initialize
+    the client simultaneously. This fixes the 'RustBindingsAPI' attribute error
+    that occurs under concurrent load.
 
     Args:
         persist_directory: Optional custom directory for ChromaDB data
                           Defaults to PROJECT_ROOT/data/chromadb/
 
     Returns:
-        ChromaDB client instance
+        ChromaDB client instance (cached singleton)
 
     Raises:
         RuntimeError: If ChromaDB initialization fails
@@ -47,23 +56,40 @@ def get_chroma_client(persist_directory: Optional[Path] = None) -> chromadb.Clie
     if persist_directory is None:
         persist_directory = CHROMA_PERSIST_DIR
 
-    # Ensure directory exists
-    persist_directory.mkdir(parents=True, exist_ok=True)
+    # Use path as cache key
+    cache_key = str(persist_directory)
 
-    try:
-        client = chromadb.PersistentClient(
-            path=str(persist_directory),
-            settings=Settings(
-                anonymized_telemetry=False,
-                allow_reset=False
+    # Check if client already exists (without lock for performance)
+    if cache_key in _client_cache:
+        return _client_cache[cache_key]
+
+    # Need to create client - acquire lock
+    with _client_lock:
+        # Double-check after acquiring lock (another thread might have created it)
+        if cache_key in _client_cache:
+            return _client_cache[cache_key]
+
+        # Ensure directory exists
+        persist_directory.mkdir(parents=True, exist_ok=True)
+
+        try:
+            client = chromadb.PersistentClient(
+                path=str(persist_directory),
+                settings=Settings(
+                    anonymized_telemetry=False,
+                    allow_reset=False
+                )
             )
-        )
-        return client
-    except Exception as e:
-        raise RuntimeError(
-            f"Failed to initialize ChromaDB client at {persist_directory}. "
-            f"Error: {str(e)}"
-        ) from e
+
+            # Cache the client for reuse
+            _client_cache[cache_key] = client
+
+            return client
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to initialize ChromaDB client at {persist_directory}. "
+                f"Error: {str(e)}"
+            ) from e
 
 
 def get_openai_embedding_function(api_key: str, model: str = "text-embedding-3-small") -> embedding_functions.OpenAIEmbeddingFunction:
@@ -118,8 +144,10 @@ def get_or_create_collection(
         if reset:
             try:
                 client.delete_collection(name=collection_name)
-            except Exception:
-                pass  # Collection doesn't exist, that's fine
+                logger.info(f"Deleted existing collection '{collection_name}'")
+            except Exception as e:
+                # Collection doesn't exist, that's fine - but log for debugging
+                logger.debug(f"Collection '{collection_name}' does not exist (cannot delete): {str(e)}")
 
         # Get or create collection
         collection = client.get_or_create_collection(

@@ -20,3 +20,28 @@ python-dotenv>=1.0.0
 
 # OpenAI (for LLM agents)
 openai>=1.0.0
+
+# DSPy (for automatic prompt optimization)
+dspy-ai>=2.4.0
+
+# Additional dependencies for DSPy optimization
+sentence-transformers>=2.2.0  # For semantic embeddings
+scikit-learn>=1.3.0  # For metrics and evaluation
+
+# Multi-level caching system dependencies
+redis[asyncio]>=5.0.0  # Async Redis for L1, L3, L4 caches
+chromadb>=0.4.0  # Vector store for L2 semantic cache (already used for RAG)
+
+# Xero API Integration
+xero-python>=2.4.0  # Official Xero Python SDK for accounting API
+requests>=2.31.0  # For OAuth2.0 and API calls
+oauthlib>=3.2.0  # OAuth2.0 authentication
+
+# Production Reliability & Resilience
+tenacity>=8.2.0  # Retry logic with exponential backoff
+pybreaker>=1.0.0  # Circuit breakers for external services
+sentry-sdk[fastapi]>=1.40.0  # Error tracking and monitoring
+ratelimit>=2.2.1  # Rate limiting for API calls
+
+# Additional Production Requirements
+python-json-logger>=2.0.0  # Structured logging for production

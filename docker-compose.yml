@@ -1,12 +1,15 @@
+# Docker Compose for Tria AIBPO - Production-Ready Local Development
+# Cloud-agnostic setup that mimics production environment
+
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
     container_name: tria_aibpo_postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_USER: ${POSTGRES_USER:-tria_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_DB: ${POSTGRES_DB:-tria_aibpo}
     ports:
       - "5433:5432"
     volumes:
@@ -15,7 +18,7 @@ services:
     networks:
       - tria_aibpo_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tria_admin -d tria_aibpo"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tria_admin} -d ${POSTGRES_DB:-tria_aibpo}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -24,6 +27,27 @@ services:
       - "project=tria-aibpo"
       - "component=database"
 
+  # Redis Cache (Required for Production Features)
+  redis:
+    image: redis:7-alpine
+    container_name: tria_aibpo_redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-change_this_redis_password_456}
+    ports:
+      - "6379:6379"
+    volumes:
+      - tria_aibpo_redis_data:/data
+    networks:
+      - tria_aibpo_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    labels:
+      - "project=tria-aibpo"
+      - "component=cache"
+
   # FastAPI Backend
   backend:
     build:
@@ -31,32 +55,66 @@ services:
       dockerfile: Dockerfile
     container_name: tria_aibpo_backend
     environment:
-      # Database connection (from .env.docker)
-      DATABASE_URL: ${DATABASE_URL}
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      # API Keys (from .env.docker - REQUIRED)
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tria_admin}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tria_aibpo}
+
+      # Redis (for idempotency and caching)
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change_this_redis_password_456}
+      REDIS_DB: 0
+
+      # OpenAI
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      XERO_CLIENT_ID: ${XERO_CLIENT_ID}
-      XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET}
-      XERO_TENANT_ID: ${XERO_TENANT_ID}
-      XERO_REFRESH_TOKEN: ${XERO_REFRESH_TOKEN}
-      # Security (from .env.docker - REQUIRED)
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4-turbo-preview}
+
+      # Xero Integration (optional)
+      XERO_CLIENT_ID: ${XERO_CLIENT_ID:-}
+      XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET:-}
+      XERO_TENANT_ID: ${XERO_TENANT_ID:-}
+      XERO_REFRESH_TOKEN: ${XERO_REFRESH_TOKEN:-}
+
+      # Tax and Accounting
+      TAX_RATE: ${TAX_RATE:-0.09}
+      XERO_SALES_ACCOUNT_CODE: ${XERO_SALES_ACCOUNT_CODE:-200}
+      XERO_TAX_TYPE: ${XERO_TAX_TYPE:-TAX001}
+
+      # Security
       SECRET_KEY: ${SECRET_KEY}
-      # App settings
+
+      # Sentry Error Tracking (optional)
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+
+      # Validation Limits
+      MAX_QUANTITY_PER_ITEM: ${MAX_QUANTITY_PER_ITEM:-10000}
+      MAX_ORDER_TOTAL: ${MAX_ORDER_TOTAL:-100000.00}
+      MAX_LINE_ITEMS: ${MAX_LINE_ITEMS:-100}
+      MIN_ORDER_TOTAL: ${MIN_ORDER_TOTAL:-0.01}
+
+      # Application
       PYTHONUNBUFFERED: 1
+      PYTHONPATH: /app/src
+
     ports:
-      - "8001:8001"
+      - "8003:8003"
     volumes:
       - ./data:/app/data
+      - ./logs:/app/logs
+      - tria_aibpo_chromadb:/app/data/chromadb_cache
     networks:
       - tria_aibpo_network
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
     labels:
       - "project=tria-aibpo"
@@ -69,18 +127,49 @@ services:
       dockerfile: Dockerfile
     container_name: tria_aibpo_frontend
     environment:
-      NEXT_PUBLIC_API_URL: http://backend:8001
+      NEXT_PUBLIC_API_URL: http://backend:8003
       NODE_ENV: production
     ports:
       - "3000:3000"
     networks:
       - tria_aibpo_network
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
     labels:
       - "project=tria-aibpo"
       - "component=frontend"
+
+  # Nginx Reverse Proxy (Production-Ready)
+  nginx:
+    image: nginx:alpine
+    container_name: tria_aibpo_nginx
+    ports:
+      - "80:80"      # HTTP (redirects to HTTPS)
+      - "443:443"    # HTTPS
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - tria_aibpo_network
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    labels:
+      - "project=tria-aibpo"
+      - "component=nginx"
 
 networks:
   tria_aibpo_network:
@@ -88,3 +177,8 @@ networks:
 
 volumes:
   tria_aibpo_postgres_data:
+    driver: local
+  tria_aibpo_redis_data:
+    driver: local
+  tria_aibpo_chromadb:
+    driver: local
