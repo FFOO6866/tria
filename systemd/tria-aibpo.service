@@ -1,0 +1,64 @@
+# Tria AIBPO systemd service
+# Manages Docker Compose application with automatic restart on failure and boot
+#
+# Installation:
+#   sudo cp systemd/tria-aibpo.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable tria-aibpo
+#   sudo systemctl start tria-aibpo
+#
+# Management:
+#   sudo systemctl status tria-aibpo
+#   sudo systemctl restart tria-aibpo
+#   sudo systemctl stop tria-aibpo
+#   sudo journalctl -u tria-aibpo -f
+
+[Unit]
+Description=Tria AIBPO - AI Business Process Orchestration Platform
+Documentation=https://github.com/yourusername/tria-aibpo
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+Group=root
+
+# Working directory (change if deployed elsewhere)
+WorkingDirectory=/opt/tria-aibpo
+
+# Environment file
+EnvironmentFile=/opt/tria-aibpo/.env
+
+# Start command
+ExecStart=/usr/bin/docker compose --env-file .env up -d
+
+# Stop command (graceful shutdown with 30s timeout)
+ExecStop=/usr/bin/docker compose --env-file .env down --timeout 30
+
+# Reload command (recreate containers)
+ExecReload=/usr/bin/docker compose --env-file .env up -d --force-recreate
+
+# Health check (runs every 5 minutes)
+ExecStartPost=/bin/bash -c 'sleep 60 && curl -sf http://localhost/health || exit 0'
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+# Timeout settings
+TimeoutStartSec=300
+TimeoutStopSec=60
+
+# Resource limits (optional - adjust based on your server)
+# MemoryLimit=4G
+# CPUQuota=200%
+
+# Security hardening (optional)
+# NoNewPrivileges=true
+# PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -506,3 +506,66 @@ grep -r "or \[" src/ --include="*.py"
 **Next Audit**: After major feature additions or when new files are created
 
 ---
+
+## 📚 Professional Documentation Structure
+
+TRIA AIBPO documentation follows a professional, structured organization. **ALWAYS consult these documents before coding.**
+
+### Core Documentation (MANDATORY READING)
+
+Located in docs/ with numbered files (01-07):
+
+1. **Platform Overview** (docs/01-platform-overview.md) - Business overview, features, use cases, performance metrics
+2. **System Architecture** (docs/02-system-architecture.md) - Multi-agent architecture, caching, RAG, integrations
+3. **Technology Stack** (docs/03-technology-stack.md) - Technologies, frameworks, dependencies, infrastructure
+4. **Development Standards** (docs/04-development-standards.md) - **READ THIS FIRST** - Production patterns, code quality, testing
+5. **Data Models** (docs/05-data-models.md) - PostgreSQL schema, DataFlow models, API contracts
+6. **Naming Conventions** (docs/06-naming-conventions.md) - File, function, variable, database naming standards
+7. **Directory Structure** (docs/07-directory-structure.md) - Project organization, file locations
+
+**Documentation Index**: docs/README.md
+
+### When to Use Each Document
+
+**Before Starting Development:**
+1. Read Development Standards - Understand production patterns
+2. Review Technology Stack - Know available tools
+3. Study Directory Structure - Understand where code goes
+4. Check Data Models - Understand database schema
+
+**During Development:**
+- Production patterns → Development Standards (docs/04-development-standards.md)
+- Architecture questions → System Architecture (docs/02-system-architecture.md)
+- Naming questions → Naming Conventions (docs/06-naming-conventions.md)
+- Database questions → Data Models (docs/05-data-models.md)
+
+**For Setup/Deployment:**
+- Installation → docs/setup/ guides
+- Deployment → DEPLOYMENT.md
+- Operations → OPERATIONAL_RUNBOOK.md
+
+### Documentation Enforcement
+
+**Before Creating ANY New Code:**
+1. Check Development Standards for patterns
+2. Check Data Models for existing models
+3. Check Directory Structure for file placement
+4. Check Naming Conventions for naming
+
+**Before Committing Code:**
+1. Verify compliance with Development Standards
+2. Confirm naming follows Naming Conventions
+3. Ensure files are in correct locations per Directory Structure
+
+### Quick Reference
+
+**Most Critical Documents for Developers:**
+1. Development Standards (docs/04-development-standards.md) - **MANDATORY FIRST READ**
+2. Technology Stack (docs/03-technology-stack.md)
+3. Directory Structure (docs/07-directory-structure.md)
+4. Data Models (docs/05-data-models.md)
+
+**Complete Documentation Index**: docs/README.md
+
+---
+

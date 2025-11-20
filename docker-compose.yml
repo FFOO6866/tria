@@ -33,7 +33,7 @@ services:
     container_name: tria_aibpo_redis
     command: redis-server --requirepass ${REDIS_PASSWORD:-change_this_redis_password_456}
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - tria_aibpo_redis_data:/data
     networks:

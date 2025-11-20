@@ -1,0 +1,85 @@
+# Patch to integrate audit logging into enhanced_api.py
+# =====================================================
+# Apply with: git apply patches/001_integrate_audit_logging.patch
+# Or manually follow the instructions below
+
+# STEP 1: Add import at top of enhanced_api.py (around line 70)
+# Add after the production imports:
+
+from monitoring.audit_logger import audit_log, AuditEvent, AuditMiddleware
+
+# STEP 2: Add audit middleware (around line 124, after SSE middleware)
+# Add this line:
+
+app.add_middleware(AuditMiddleware)
+
+# STEP 3: Add audit logging to chatbot endpoint
+# In the chatbot_endpoint function (around line 1380, after response is built),
+# add this code BEFORE the return statement:
+
+    # Audit log the interaction
+    try:
+        from monitoring.audit_logger import audit_log, AuditEvent
+
+        audit_log(
+            event_type=AuditEvent.DATA_ACCESS,
+            user_id=request.user_id,
+            resource="chatbot",
+            action="query",
+            details={
+                "intent": intent_result.intent if 'intent_result' in locals() else "unknown",
+                "message_length": len(request.message),
+                "has_order_id": response_order_id is not None
+            },
+            success=True,
+            ip_address=None  # FastAPI request object needed for IP
+        )
+    except Exception as e:
+        logger.warning(f"Audit logging failed: {e}")
+        # Don't fail the request if audit logging fails
+
+# STEP 4: Add audit logging for order creation
+# Find the section where orders are created (around line 970),
+# after successful order creation, add:
+
+    if created_order_id:
+        try:
+            audit_log(
+                event_type=AuditEvent.ORDER_CREATED,
+                user_id=request.user_id,
+                resource="order",
+                action="create",
+                details={
+                    "order_id": created_order_id,
+                    "outlet_id": outlet_id,
+                    "total_amount": float(total_dec)
+                },
+                success=True
+            )
+        except Exception:
+            pass  # Don't fail order if audit fails
+
+# STEP 5: Add audit logging for Xero operations
+# Find where Xero invoices are created (around line 1050),
+# after successful invoice creation, add:
+
+    if xero_invoice_id:
+        try:
+            audit_log(
+                event_type=AuditEvent.XERO_INVOICE_CREATED,
+                user_id=request.user_id,
+                resource="xero_invoice",
+                action="create",
+                details={
+                    "invoice_id": xero_invoice_id,
+                    "order_id": created_order_id,
+                    "customer": outlet_name_full
+                },
+                success=True
+            )
+        except Exception:
+            pass
+
+# VERIFICATION:
+# After applying, check that audit.log file is created in logs/ directory
+# and contains JSON entries when you make API calls.

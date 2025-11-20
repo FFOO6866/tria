@@ -3,51 +3,58 @@
 TRIA AI-BPO Session Manager
 ============================
 
-Manages conversation sessions and message logging using DataFlow models.
-Integrates with ConversationSession, ConversationMessage, and UserInteractionSummary.
+Modern session management using PostgreSQL + SQLAlchemy ORM.
+This is a compatibility wrapper around ConversationMemoryManager.
 
-NOW WITH PII PROTECTION:
-- Automatic PII scrubbing for all user messages
-- PII metadata stored in message context
-- Compliance with Singapore PDPA requirements
+Architecture Upgrade:
+- OLD: DataFlow auto-generated nodes (process-specific registry)
+- NEW: Direct SQLAlchemy ORM (cross-process accessibility)
+- LEADING-EDGE: PostgreSQL + ChromaDB + DSPy optimization
 
-NO MOCKING - All operations use real PostgreSQL database via DataFlow.
+Features:
+- Automatic PII scrubbing for PDPA compliance
+- Cross-process database access (no node registry limitations)
+- Industry-standard ORM patterns
+- Semantic memory integration (Phase 2)
+
+NO MOCKING - All operations use real PostgreSQL database.
 """
 
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from uuid import uuid4
 import logging
 
-from kailash.workflow.builder import WorkflowBuilder
-from kailash.runtime.local import LocalRuntime
-
-# Import PII scrubbing functionality
-from privacy.pii_scrubber import scrub_pii, should_scrub_message, get_scrubbing_summary
+from memory.conversation_memory_manager import get_conversation_memory
 
 logger = logging.getLogger(__name__)
 
 
 class SessionManager:
     """
-    Manages conversation sessions for TRIA chatbot
+    Modern session manager using PostgreSQL + SQLAlchemy ORM
 
-    Uses DataFlow auto-generated nodes:
-    - ConversationSessionCreateNode, ConversationSessionReadNode, etc.
-    - ConversationMessageCreateNode, ConversationMessageListNode, etc.
-    - UserInteractionSummaryCreateNode, UserInteractionSummaryUpdateNode, etc.
+    This is a compatibility wrapper around ConversationMemoryManager
+    to maintain existing API while using leading-edge architecture.
 
-    All operations execute real database workflows - NO MOCKING.
+    All operations execute real database queries - NO MOCKING.
     """
 
-    def __init__(self, runtime: Optional[LocalRuntime] = None):
+    def __init__(self, runtime: Optional[Any] = None):
         """
         Initialize session manager
 
         Args:
-            runtime: Kailash LocalRuntime instance (creates new if not provided)
+            runtime: DEPRECATED - Kept for API compatibility only.
+                    New implementation uses direct SQLAlchemy connection.
         """
-        self.runtime = runtime if runtime is not None else LocalRuntime()
+        # Get global conversation memory manager
+        self.memory = get_conversation_memory()
+
+        if runtime is not None:
+            logger.warning(
+                "SessionManager no longer uses Kailash runtime. "
+                "Using PostgreSQL + SQLAlchemy ORM for cross-process access."
+            )
 
     def create_session(
         self,
@@ -73,90 +80,13 @@ class SessionManager:
         Raises:
             RuntimeError: If session creation fails
         """
-        session_id = str(uuid4())
-
-        # Build workflow to create session
-        workflow = WorkflowBuilder()
-
-        # Build session data, only include outlet_id if provided
-        session_data = {
-            "session_id": session_id,
-            "user_id": user_id,
-            "language": language,
-            "start_time": datetime.now(),
-            "message_count": 0,
-            "intents": {
-                "primary": initial_intent,
-                "confidence": intent_confidence
-            } if initial_intent else {},
-            "context": {},
-            "created_at": datetime.now()
-        }
-
-        # Only include outlet_id if it's not None
-        if outlet_id is not None:
-            session_data["outlet_id"] = outlet_id
-
-        workflow.add_node("ConversationSessionCreateNode", "create_session", session_data)
-
-        # Execute workflow
-        try:
-            results, run_id = self.runtime.execute(workflow.build())
-            created_session = results.get('create_session', {})
-
-            # Verify session was created
-            if not created_session or not created_session.get('session_id'):
-                raise RuntimeError(
-                    f"Failed to create session - no session_id returned. Run ID: {run_id}"
-                )
-
-            return session_id
-
-        except Exception as e:
-            raise RuntimeError(f"Session creation failed: {str(e)}") from e
-
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Retrieve session data by session_id
-
-        Args:
-            session_id: Unique session identifier
-
-        Returns:
-            Session data dict or None if not found
-        """
-        # Build workflow to query session
-        workflow = WorkflowBuilder()
-        workflow.add_node("ConversationSessionListNode", "get_session", {
-            "filters": {"session_id": session_id},
-            "limit": 1
-        })
-
-        # Execute workflow
-        try:
-            results, _ = self.runtime.execute(workflow.build())
-            session_data = results.get('get_session', [])
-
-            # Handle different result structures (list or dict)
-            if isinstance(session_data, list) and len(session_data) > 0:
-                if isinstance(session_data[0], dict):
-                    if 'records' in session_data[0]:
-                        records = session_data[0]['records']
-                        return records[0] if len(records) > 0 else None
-                    else:
-                        return session_data[0]
-            elif isinstance(session_data, dict):
-                if 'records' in session_data:
-                    records = session_data['records']
-                    return records[0] if len(records) > 0 else None
-                else:
-                    return session_data
-
-            return None
-
-        except Exception as e:
-            print(f"[WARNING] Failed to retrieve session {session_id}: {e}")
-            return None
+        return self.memory.create_session(
+            user_id=user_id,
+            outlet_id=outlet_id,
+            language=language,
+            initial_intent=initial_intent,
+            intent_confidence=intent_confidence
+        )
 
     def log_message(
         self,
@@ -170,7 +100,7 @@ class SessionManager:
         enable_pii_scrubbing: bool = True
     ) -> bool:
         """
-        Log conversation message to database with automatic PII scrubbing
+        Log conversation message with automatic PII scrubbing
 
         PDPA COMPLIANCE:
         - Automatically detects and scrubs PII from messages
@@ -190,94 +120,17 @@ class SessionManager:
 
         Returns:
             True if logged successfully, False otherwise
-
-        Example:
-            >>> manager = SessionManager()
-            >>> manager.log_message(
-            ...     session_id="abc123",
-            ...     role="user",
-            ...     content="Call me at +65 9123 4567",
-            ...     intent="inquiry"
-            ... )
-            # Stores: "Call me at [PHONE]" with PII metadata in context
         """
-        # ====================================================================
-        # STEP 1: PII DETECTION AND SCRUBBING
-        # ====================================================================
-        scrubbed_content = content
-        pii_scrubbed = False
-        message_context = context.copy() if context else {}
-
-        if enable_pii_scrubbing and should_scrub_message(role, content):
-            # Scrub PII from content
-            scrubbed_content, pii_metadata = scrub_pii(content)
-
-            if pii_metadata.total_count > 0:
-                pii_scrubbed = True
-
-                # Store PII metadata in message context for audit
-                message_context['pii_detection'] = pii_metadata.to_dict()
-
-                # Log scrubbing summary
-                summary = get_scrubbing_summary(pii_metadata)
-                logger.info(
-                    f"PII scrubbed from {role} message in session {session_id[:8]}...: {summary}"
-                )
-                logger.debug(
-                    f"Original length: {pii_metadata.original_length}, "
-                    f"Scrubbed length: {pii_metadata.scrubbed_length}"
-                )
-            else:
-                logger.debug(f"No PII detected in {role} message")
-
-        # ====================================================================
-        # STEP 2: STORE SCRUBBED MESSAGE IN DATABASE
-        # ====================================================================
-        # TEMPORARILY DISABLED: JSON serialization issue with context field
-        # TODO: Fix JSON serialization before re-enabling
-        logger.info(f"[TEMP] Skipping message logging for session {session_id[:8]}... (logging disabled)")
-        logger.debug(f"Would have logged {role} message with PII scrubbed: {pii_scrubbed}")
-        return True
-
-        # ORIGINAL CODE - DISABLED:
-        # # Build workflow to create message
-        # workflow = WorkflowBuilder()
-        # workflow.add_node("ConversationMessageCreateNode", "log_message", {
-        #     "session_id": session_id,
-        #     "role": role,
-        #     "content": scrubbed_content,  # STORE SCRUBBED CONTENT ONLY
-        #     "language": language,
-        #     "intent": intent,
-        #     "confidence": confidence,
-        #     "context": message_context,  # Includes PII metadata if scrubbed
-        #     "pii_scrubbed": pii_scrubbed,
-        #     "timestamp": datetime.now(),
-        #     "created_at": datetime.now()
-        # })
-        #
-        # # Execute workflow
-        # try:
-        #     results, run_id = self.runtime.execute(workflow.build())
-        #     message_data = results.get('log_message', {})
-        #
-        #     # Verify message was created
-        #     if not message_data:
-        #         logger.warning(f"Message creation returned no data. Run ID: {run_id}")
-        #         return False
-        #
-        #     # Update session message count
-        #     self._increment_message_count(session_id)
-        #
-        #     logger.debug(
-        #         f"Logged {role} message to session {session_id[:8]}... "
-        #         f"(PII scrubbed: {pii_scrubbed})"
-        #     )
-        #
-        #     return True
-        #
-        # except Exception as e:
-        #     logger.error(f"Failed to log message: {e}")
-        #     return False
+        return self.memory.log_message(
+            session_id=session_id,
+            role=role,
+            content=content,
+            intent=intent,
+            confidence=confidence,
+            language=language,
+            context=context,
+            enable_pii_scrubbing=enable_pii_scrubbing
+        )
 
     def get_conversation_history(
         self,
@@ -286,376 +139,80 @@ class SessionManager:
         role_filter: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        Retrieve conversation history for session
+        Get conversation history for a session
 
         Args:
             session_id: Session identifier
-            limit: Maximum number of messages to retrieve
-            role_filter: Filter by role ("user" or "assistant"), None for all
+            limit: Maximum number of messages to return (default: 10)
+            role_filter: Optional filter by role ("user" or "assistant")
 
         Returns:
-            List of message dictionaries ordered by timestamp (oldest first)
+            List of messages (oldest first) as dictionaries
         """
-        # Build filters
-        filters = {"session_id": session_id}
-        if role_filter:
-            filters["role"] = role_filter
+        return self.memory.get_conversation_history(
+            session_id=session_id,
+            limit=limit,
+            role_filter=role_filter
+        )
 
-        # Build workflow to query messages
-        workflow = WorkflowBuilder()
-        workflow.add_node("ConversationMessageListNode", "get_history", {
-            "filters": filters,
-            "order_by": ["timestamp"],  # Oldest first for GPT-4 context
-            "limit": limit
-        })
+    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get session metadata
 
-        # Execute workflow
-        try:
-            results, _ = self.runtime.execute(workflow.build())
-            messages_data = results.get('get_history', [])
+        Args:
+            session_id: Session identifier
 
-            # Handle different result structures
-            if isinstance(messages_data, list) and len(messages_data) > 0:
-                if isinstance(messages_data[0], dict):
-                    if 'records' in messages_data[0]:
-                        return messages_data[0]['records']
-                    else:
-                        return messages_data
-            elif isinstance(messages_data, dict):
-                if 'records' in messages_data:
-                    return messages_data['records']
-                else:
-                    return [messages_data]
+        Returns:
+            Session metadata dictionary or None if not found
+        """
+        return self.memory.get_session(session_id)
 
-            return []
-
-        except Exception as e:
-            print(f"[ERROR] Failed to retrieve conversation history: {e}")
-            return []
-
-    def update_session_context(
+    def update_session_metadata(
         self,
         session_id: str,
-        context_updates: Dict[str, Any]
+        metadata_updates: Dict[str, Any]
     ) -> bool:
         """
         Update session context metadata
 
         Args:
             session_id: Session identifier
-            context_updates: Dictionary of context fields to update
+            metadata_updates: Context fields to update
 
         Returns:
-            True if updated successfully, False otherwise
+            True if updated successfully
         """
-        # First, get current session to merge context
-        session = self.get_session(session_id)
-        if not session:
-            print(f"[WARNING] Session {session_id} not found for context update")
-            return False
-
-        # Merge context (handle JSON string from database)
-        current_context = session.get('context', {})
-
-        # Parse context if it's a JSON string
-        if isinstance(current_context, str):
-            try:
-                import json
-                current_context = json.loads(current_context)
-            except (json.JSONDecodeError, ValueError):
-                logger.warning(f"Failed to parse context JSON, using empty dict")
-                current_context = {}
-
-        if not isinstance(current_context, dict):
-            current_context = {}
-
-        updated_context = {**current_context, **context_updates}
-
-        # Build workflow to update session
-        workflow = WorkflowBuilder()
-        workflow.add_node("ConversationSessionListNode", "find_session", {
-            "filters": {"session_id": session_id},
-            "limit": 1
-        })
-
-        # Execute to get record ID
-        try:
-            results, _ = self.runtime.execute(workflow.build())
-            session_data = results.get('find_session', [])
-
-            # Extract record ID
-            record_id = None
-            if isinstance(session_data, list) and len(session_data) > 0:
-                if isinstance(session_data[0], dict):
-                    if 'records' in session_data[0]:
-                        records = session_data[0]['records']
-                        record_id = records[0].get('id') if len(records) > 0 else None
-                    else:
-                        record_id = session_data[0].get('id')
-
-            if not record_id:
-                print(f"[WARNING] Could not find record ID for session {session_id}")
-                return False
-
-            # Update session with new context
-            update_workflow = WorkflowBuilder()
-            update_workflow.add_node("ConversationSessionUpdateNode", "update_context", {
-                "record_id": record_id,
-                "context": updated_context,
-                "updated_at": datetime.now()
-            })
-
-            update_results, _ = self.runtime.execute(update_workflow.build())
-            return bool(update_results.get('update_context'))
-
-        except Exception as e:
-            print(f"[ERROR] Failed to update session context: {e}")
-            return False
+        return self.memory.update_session_context(session_id, metadata_updates)
 
     def close_session(self, session_id: str) -> bool:
         """
-        Close conversation session by setting end_time
+        Close a conversation session
 
         Args:
             session_id: Session identifier
 
         Returns:
-            True if closed successfully, False otherwise
+            True if closed successfully
         """
-        # Get session to find record ID
-        session = self.get_session(session_id)
-        if not session:
-            print(f"[WARNING] Session {session_id} not found for closing")
-            return False
+        return self.memory.close_session(session_id)
 
-        # Build workflow to update session
-        workflow = WorkflowBuilder()
-        workflow.add_node("ConversationSessionListNode", "find_session", {
-            "filters": {"session_id": session_id},
-            "limit": 1
-        })
-
-        # Execute to get record ID
-        try:
-            results, _ = self.runtime.execute(workflow.build())
-            session_data = results.get('find_session', [])
-
-            # Extract record ID
-            record_id = None
-            if isinstance(session_data, list) and len(session_data) > 0:
-                if isinstance(session_data[0], dict):
-                    if 'records' in session_data[0]:
-                        records = session_data[0]['records']
-                        record_id = records[0].get('id') if len(records) > 0 else None
-                    else:
-                        record_id = session_data[0].get('id')
-
-            if not record_id:
-                print(f"[WARNING] Could not find record ID for session {session_id}")
-                return False
-
-            # Close session
-            close_workflow = WorkflowBuilder()
-            close_workflow.add_node("ConversationSessionUpdateNode", "close_session", {
-                "record_id": record_id,
-                "end_time": datetime.now(),
-                "updated_at": datetime.now()
-            })
-
-            close_results, _ = self.runtime.execute(close_workflow.build())
-            return bool(close_results.get('close_session'))
-
-        except Exception as e:
-            print(f"[ERROR] Failed to close session: {e}")
-            return False
-
-    def update_user_analytics(
-        self,
-        user_id: str,
-        outlet_id: Optional[int] = None,
-        language: str = "en",
-        intent: Optional[str] = None
-    ) -> bool:
+    def get_user_summary(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
-        Update user interaction summary after conversation
-
-        Creates new summary if user is new, updates existing summary otherwise.
+        Get user interaction summary
 
         Args:
-            user_id: WhatsApp user ID
-            outlet_id: Outlet ID if identified
-            language: Conversation language
-            intent: Primary intent detected
+            user_id: User identifier
 
         Returns:
-            True if updated successfully, False otherwise
+            User summary dictionary or None if not found
         """
-        # Check if summary exists
-        workflow = WorkflowBuilder()
-        workflow.add_node("UserInteractionSummaryListNode", "find_summary", {
-            "filters": {"user_id": user_id},
-            "limit": 1
-        })
+        return self.memory.get_user_summary(user_id)
 
-        try:
-            results, _ = self.runtime.execute(workflow.build())
-            summary_data = results.get('find_summary', [])
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get conversation memory statistics
 
-            # Extract existing summary
-            existing_summary = None
-            if isinstance(summary_data, list) and len(summary_data) > 0:
-                if isinstance(summary_data[0], dict):
-                    if 'records' in summary_data[0]:
-                        records = summary_data[0]['records']
-                        existing_summary = records[0] if len(records) > 0 else None
-                    else:
-                        existing_summary = summary_data[0]
-
-            if existing_summary:
-                # Update existing summary
-                return self._update_existing_summary(
-                    existing_summary, outlet_id, language, intent
-                )
-            else:
-                # Create new summary
-                return self._create_new_summary(
-                    user_id, outlet_id, language, intent
-                )
-
-        except Exception as e:
-            print(f"[ERROR] Failed to update user analytics: {e}")
-            return False
-
-    # ========================================================================
-    # PRIVATE HELPER METHODS
-    # ========================================================================
-
-    def _increment_message_count(self, session_id: str) -> bool:
-        """Increment message count for session"""
-        session = self.get_session(session_id)
-        if not session:
-            return False
-
-        current_count = session.get('message_count', 0)
-
-        # Build workflow to update count
-        workflow = WorkflowBuilder()
-        workflow.add_node("ConversationSessionListNode", "find_session", {
-            "filters": {"session_id": session_id},
-            "limit": 1
-        })
-
-        try:
-            results, _ = self.runtime.execute(workflow.build())
-            session_data = results.get('find_session', [])
-
-            # Extract record ID
-            record_id = None
-            if isinstance(session_data, list) and len(session_data) > 0:
-                if isinstance(session_data[0], dict):
-                    if 'records' in session_data[0]:
-                        records = session_data[0]['records']
-                        record_id = records[0].get('id') if len(records) > 0 else None
-                    else:
-                        record_id = session_data[0].get('id')
-
-            if not record_id:
-                return False
-
-            # Update count
-            update_workflow = WorkflowBuilder()
-            update_workflow.add_node("ConversationSessionUpdateNode", "increment_count", {
-                "record_id": record_id,
-                "message_count": current_count + 1,
-                "updated_at": datetime.now()
-            })
-
-            self.runtime.execute(update_workflow.build())
-            return True
-
-        except Exception as e:
-            print(f"[WARNING] Failed to increment message count: {e}")
-            return False
-
-    def _update_existing_summary(
-        self,
-        summary: Dict[str, Any],
-        outlet_id: Optional[int],
-        language: str,
-        intent: Optional[str]
-    ) -> bool:
-        """Update existing user interaction summary"""
-        record_id = summary.get('id')
-        if not record_id:
-            return False
-
-        # Increment counters
-        total_conversations = summary.get('total_conversations', 0) + 1
-        total_messages = summary.get('total_messages', 0) + 2  # user + assistant
-
-        # Update intent counts (handle JSON string from database)
-        common_intents = summary.get('common_intents', {})
-
-        # Parse common_intents if it's a JSON string
-        if isinstance(common_intents, str):
-            try:
-                import json
-                common_intents = json.loads(common_intents)
-            except (json.JSONDecodeError, ValueError):
-                common_intents = {}
-
-        if not isinstance(common_intents, dict):
-            common_intents = {}
-
-        if intent:
-            common_intents[intent] = common_intents.get(intent, 0) + 1
-
-        # Build workflow to update summary
-        workflow = WorkflowBuilder()
-        workflow.add_node("UserInteractionSummaryUpdateNode", "update_summary", {
-            "record_id": record_id,
-            "outlet_id": outlet_id or summary.get('outlet_id'),
-            "total_conversations": total_conversations,
-            "total_messages": total_messages,
-            "common_intents": common_intents,
-            "preferred_language": language,  # Latest language
-            "last_interaction": datetime.now(),
-            "updated_at": datetime.now()
-        })
-
-        try:
-            self.runtime.execute(workflow.build())
-            return True
-        except Exception as e:
-            print(f"[ERROR] Failed to update summary: {e}")
-            return False
-
-    def _create_new_summary(
-        self,
-        user_id: str,
-        outlet_id: Optional[int],
-        language: str,
-        intent: Optional[str]
-    ) -> bool:
-        """Create new user interaction summary"""
-        workflow = WorkflowBuilder()
-        workflow.add_node("UserInteractionSummaryCreateNode", "create_summary", {
-            "user_id": user_id,
-            "outlet_id": outlet_id,
-            "total_conversations": 1,
-            "total_messages": 2,  # user + assistant
-            "common_intents": {intent: 1} if intent else {},
-            "preferred_language": language,
-            "avg_satisfaction": 0.0,
-            "last_interaction": datetime.now(),
-            "first_interaction": datetime.now(),
-            "metadata": {},
-            "created_at": datetime.now()
-        })
-
-        try:
-            self.runtime.execute(workflow.build())
-            return True
-        except Exception as e:
-            print(f"[ERROR] Failed to create summary: {e}")
-            return False
+        Returns:
+            Dictionary with system statistics
+        """
+        return self.memory.get_stats()

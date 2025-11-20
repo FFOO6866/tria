@@ -27,6 +27,7 @@ from sqlalchemy import create_engine, Engine, text
 from sqlalchemy.pool import QueuePool
 from typing import Optional
 import logging
+import os
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -71,11 +72,13 @@ def get_db_engine(database_url: Optional[str] = None) -> Engine:
     global _engine
 
     if _engine is None:
-        # Import config here to avoid circular imports
-        from config import config
-
-        # Use provided URL or get from config
-        url = database_url or config.get_database_url()
+        # Use provided URL or get from environment
+        url = database_url or os.getenv('DATABASE_URL')
+        if not url:
+            raise RuntimeError(
+                "DATABASE_URL not provided and DATABASE_URL environment variable not set. "
+                "Please set DATABASE_URL in .env file."
+            )
 
         try:
             _engine = create_engine(

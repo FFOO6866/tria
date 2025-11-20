@@ -1,102 +1,115 @@
-# Tria AIBPO Documentation
+# TRIA AIBPO Documentation
 
-Welcome to the Tria AI-BPO documentation. This directory contains all project documentation organized by category.
+**AI-Powered Business Process Outsourcing Platform**
 
----
-
-## 📚 Documentation Structure
-
-### **[setup/](setup/)** - Installation & Configuration
-Complete guides for setting up the development environment and production deployment:
-
-- **[uv-setup.md](setup/uv-setup.md)** - Python environment setup with UV package manager
-- **[docker-deployment.md](setup/docker-deployment.md)** - Docker containerization and deployment
-- **[database-configuration.md](setup/database-configuration.md)** - PostgreSQL database setup
-- **[production-secrets-setup.md](setup/production-secrets-setup.md)** - Environment variables and secrets
-- **[github-setup-guide.md](setup/github-setup-guide.md)** - GitHub repository configuration
-
-### **[architecture/](architecture/)** - System Architecture
-Technical architecture documentation and design decisions:
-
-- **[chatbot-architecture-proposal.md](architecture/CHATBOT_ARCHITECTURE_PROPOSAL.md)** - Chatbot system design
-- **[conversation-memory-architecture.md](architecture/conversation_memory_architecture.md)** - Memory system design
-- **[conversation-memory-system.md](architecture/conversation_memory_system.md)** - Memory implementation details
-- **[existing-a2a-framework-analysis.md](architecture/EXISTING_A2A_FRAMEWORK_ANALYSIS.md)** - Agent-to-agent framework analysis
-- **[pdpa-compliance-guide.md](architecture/PDPA_COMPLIANCE_GUIDE.md)** - Privacy and data protection compliance
-
-### **[guides/](guides/)** - User & Developer Guides
-Quick-start guides and how-to documentation:
-
-- **[cache-integration-guide.md](guides/cache-integration-guide.md)** - Redis caching implementation and optimization
-- **[conversation-memory-quick-reference.md](guides/conversation_memory_quick_reference.md)** - Memory system quick reference
-- **[intent-classifier-quickstart.md](guides/INTENT_CLASSIFIER_QUICKSTART.md)** - Intent classification guide
-- **[multilevel-cache-integration.md](guides/MULTILEVEL_CACHE_INTEGRATION.md)** - Multi-tier caching architecture
-
-### **[reports/](reports/)** - Status Reports & Audits
-
-#### **[production-readiness/](reports/production-readiness/)** - Current Production Status
-- **[FINAL_PROGRESS_REPORT.md](reports/production-readiness/FINAL_PROGRESS_REPORT.md)** - Latest honest progress assessment
-- **[CODEBASE_AUDIT.md](reports/production-readiness/CODEBASE_AUDIT.md)** - Duplication and quality audit
-- **[PRODUCTION_HARDENING_FIXES.md](reports/production-readiness/PRODUCTION_HARDENING_FIXES.md)** - Production fixes summary
-- **[CLEANUP_PLAN.md](reports/production-readiness/CLEANUP_PLAN.md)** - Directory organization plan
-
-#### **[archive/](reports/archive/)** - Historical Reports
-Archived status reports and implementation summaries organized by date:
-- `2024-10-17/` - Initial production audits
-- `2024-10-18/` - Feature implementation reports
-- `2024-10-23/` - Status updates and fixes
-- `2025-11-07/` - Weekly summaries and optimization reports
-- `2025-11-13/` - Load testing and validation reports
+Version: 1.1.0 | Last Updated: 2025-11-21
 
 ---
 
-## 🔍 Quick Navigation
+## Quick Start
 
-### Getting Started
-1. [Project README](../README.md) - Project overview
-2. [Setup Guide](setup/uv-setup.md) - Start here for installation
-3. [Docker Deployment](setup/docker-deployment.md) - For containerized deployment
+New to TRIA? Start here:
 
-### Development
-1. [CLAUDE.md](../CLAUDE.md) - Development guidelines and patterns
-2. [Architecture Docs](architecture/) - System design documentation
-3. [Source Code](../src/README.md) - Source code structure
-
-### Production Deployment
-1. [Production Secrets Setup](setup/production-secrets-setup.md)
-2. [Database Configuration](setup/database-configuration.md)
-3. [Final Progress Report](reports/production-readiness/FINAL_PROGRESS_REPORT.md)
+1. [Platform Overview](01-platform-overview.md) - What is TRIA and what does it do?
+2. [Technology Stack](03-technology-stack.md) - Technologies and dependencies
+3. [Development Standards](04-development-standards.md) - Coding standards and best practices
+4. [Directory Structure](07-directory-structure.md) - Project organization
 
 ---
 
-## 📝 Documentation Standards
+## Core Documentation
 
-### File Naming
-- Use lowercase with hyphens: `my-document.md`
-- Be descriptive: `chatbot-architecture.md` not `arch.md`
-- Date archives: `2024-10-18/`
+### 1. [Platform Overview](01-platform-overview.md)
+**Purpose and capabilities of the TRIA AIBPO platform**
+- Business overview
+- Key features and capabilities
+- Use cases and scenarios
+- Performance metrics
 
-### Organization
-- **Current** docs in main categories (setup/, architecture/, guides/)
-- **Historical** reports in archive/ by date
-- **Active** reports in reports/production-readiness/
+### 2. [System Architecture](02-system-architecture.md)
+**Technical architecture and design decisions**
+- Multi-agent architecture
+- Component interactions
+- Integration points
+- Caching strategy (4-tier system)
+- RAG implementation
+- Security architecture
 
-### Maintenance
-- Archive outdated reports regularly
-- Update this index when adding new documentation
-- Keep CLAUDE.md updated with doc structure
+### 3. [Technology Stack](03-technology-stack.md)
+**Technologies, frameworks, and dependencies**
+- Runtime environment
+- Core frameworks and libraries
+- Database systems
+- External integrations
+- Development tools
+
+### 4. [Development Standards](04-development-standards.md)
+**Coding standards and best practices**
+- Production-grade patterns (CRITICAL)
+- Code quality standards
+- Testing requirements
+- Security standards
+- Error handling
+- Logging and monitoring
+
+### 5. [Data Models](05-data-models.md)
+**Database schema and data structures**
+- PostgreSQL models
+- DataFlow model definitions
+- Conversation models
+- API data contracts
+
+### 6. [Naming Conventions](06-naming-conventions.md)
+**File, function, and variable naming standards**
+- File naming conventions
+- Function and class naming
+- Variable naming patterns
+- Database naming
+- API endpoint naming
+
+### 7. [Directory Structure](07-directory-structure.md)
+**Project organization and file structure**
+- Source code organization
+- Documentation structure
+- Test organization
+- Configuration management
 
 ---
 
-## 🚀 Contributing
+## Setup Guides
 
-When adding documentation:
-1. Place in appropriate category directory
-2. Update this README with link
-3. Follow naming conventions
-4. Archive superseded documents
+### Installation & Configuration
+Located in [setup/](setup/):
+
+- [UV Setup Guide](setup/UV_SETUP.md) - Python environment with UV package manager
+- [Docker Deployment](setup/DOCKER_DEPLOYMENT.md) - Containerized deployment
+- [Database Configuration](setup/DATABASE_CONFIGURATION.md) - PostgreSQL setup
+- [Production Secrets Setup](setup/PRODUCTION_SECRETS_SETUP.md) - Environment variables
+- [GitHub Setup Guide](setup/GITHUB_SETUP_GUIDE.md) - Repository configuration
+- [AWS Deployment Guide](setup/aws-deployment-guide.md) - Cloud deployment
 
 ---
 
-**Last Updated**: 2025-11-13
-**Maintainer**: Development Team
+## Quick Reference
+
+### Most Important Documents
+
+**For Developers:**
+1. [Development Standards](04-development-standards.md) - READ THIS FIRST
+2. [Technology Stack](03-technology-stack.md)
+3. [Directory Structure](07-directory-structure.md)
+4. [Data Models](05-data-models.md)
+
+**For Deployment:**
+1. [DEPLOYMENT.md](../DEPLOYMENT.md)
+2. [Production Secrets Setup](setup/PRODUCTION_SECRETS_SETUP.md)
+3. [AWS Deployment Guide](setup/aws-deployment-guide.md)
+
+**For Architecture:**
+1. [System Architecture](02-system-architecture.md)
+2. [Chatbot Architecture](architecture/CHATBOT_ARCHITECTURE_PROPOSAL.md)
+
+---
+
+**Maintained by**: Development Team
+**Last Review**: 2025-11-21

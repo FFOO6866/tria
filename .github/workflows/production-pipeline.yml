@@ -1,0 +1,403 @@
+# Production CI/CD Pipeline for TRIA AI-BPO
+# ==========================================
+#
+# Runs on: Push to main, Pull Requests
+#
+# Pipeline stages:
+# 1. Code Quality (linting, type checking)
+# 2. Unit Tests (Tier 1)
+# 3. Integration Tests (Tier 2 with real services)
+# 4. Security Scanning (OWASP, dependency check)
+# 5. Performance Benchmarks
+# 6. Build Docker Images
+# 7. Deploy to Staging (auto)
+# 8. Deploy to Production (manual approval)
+
+name: Production CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PYTHON_VERSION: '3.11'
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/tria-backend
+
+jobs:
+  # ============================================================================
+  # Stage 1: Code Quality
+  # ============================================================================
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install black flake8 mypy pylint
+
+      - name: Run Black (code formatting)
+        run: black --check src/ tests/
+
+      - name: Run Flake8 (linting)
+        run: flake8 src/ tests/ --max-line-length=120 --ignore=E203,W503
+
+      - name: Run MyPy (type checking)
+        run: mypy src/ --ignore-missing-imports
+
+      - name: Run Pylint (code analysis)
+        run: pylint src/ --disable=C0111,C0103 --max-line-length=120
+
+  # ============================================================================
+  # Stage 2: Unit Tests
+  # ============================================================================
+  unit-tests:
+    name: Unit Tests (Tier 1)
+    runs-on: ubuntu-latest
+    needs: code-quality
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run unit tests with coverage
+        run: |
+          pytest tests/tier1_unit/ -v --cov=src --cov-report=xml --cov-report=term
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          flags: unittests
+
+  # ============================================================================
+  # Stage 3: Integration Tests
+  # ============================================================================
+  integration-tests:
+    name: Integration Tests (Tier 2)
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tria_admin
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: tria_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    env:
+      DATABASE_URL: postgresql://tria_admin:test_password@localhost:5432/tria_test
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      TAX_RATE: 0.08
+      XERO_SALES_ACCOUNT_CODE: 200
+      XERO_TAX_TYPE: OUTPUT2
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run integration tests
+        run: |
+          pytest tests/tier2_integration/ -v
+
+  # ============================================================================
+  # Stage 4: Security Scanning
+  # ============================================================================
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    needs: code-quality
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Bandit (security linter)
+        run: |
+          pip install bandit
+          bandit -r src/ -f json -o bandit-report.json || true
+
+      - name: Run Safety (dependency vulnerability check)
+        run: |
+          pip install safety
+          safety check --json > safety-report.json || true
+
+      - name: Run Trivy (container vulnerability scanner)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # ============================================================================
+  # Stage 5: Performance Benchmarks (on main branch only)
+  # ============================================================================
+  performance-benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+    if: github.ref == 'refs/heads/main'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tria_admin
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: tria_test
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    env:
+      DATABASE_URL: postgresql://tria_admin:test_password@localhost:5432/tria_test
+      REDIS_HOST: localhost
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      TAX_RATE: 0.08
+      XERO_SALES_ACCOUNT_CODE: 200
+      XERO_TAX_TYPE: OUTPUT2
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Start application
+        run: |
+          python src/enhanced_api.py &
+          sleep 30  # Wait for startup
+
+      - name: Run performance benchmarks
+        run: |
+          python tests/performance/test_comprehensive_performance.py > benchmark-results.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results
+          path: benchmark-results.txt
+
+      - name: Check performance thresholds
+        run: |
+          # Parse results and fail if P95 > 5s
+          grep "P95:" benchmark-results.txt | awk '{if ($2 > 5000) exit 1}'
+
+  # ============================================================================
+  # Stage 6: Build Docker Images
+  # ============================================================================
+  build-docker:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests, security-scan]
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=semver,pattern={{version}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # Stage 7: Deploy to Staging (auto)
+  # ============================================================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-docker
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    environment:
+      name: staging
+      url: https://staging.tria.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to staging server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd /opt/tria
+            git pull origin main
+            docker-compose pull
+            docker-compose up -d
+            docker-compose exec backend python -c "import sys; print('Health check')"
+
+      - name: Run smoke tests on staging
+        run: |
+          sleep 30  # Wait for deployment
+          curl -f https://staging.tria.com/health || exit 1
+
+      - name: Notify deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: 'Staging deployment completed'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  # ============================================================================
+  # Stage 8: Deploy to Production (manual approval required)
+  # ============================================================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-docker, deploy-staging, performance-benchmark]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://tria.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to production server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /opt/tria
+            git pull origin main
+            docker-compose pull
+            docker-compose up -d --no-deps backend  # Rolling update
+            sleep 10
+            curl -f http://localhost:8003/health || exit 1
+
+      - name: Run smoke tests on production
+        run: |
+          sleep 30
+          curl -f https://tria.com/health || exit 1
+
+      - name: Notify production deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: '🚀 Production deployment completed!'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false

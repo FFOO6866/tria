@@ -1,0 +1,150 @@
+# Patch to add Prometheus metrics endpoint
+# =========================================
+# This adds a /metrics endpoint for Prometheus to scrape
+
+# STEP 1: Install prometheus_client
+# Add to requirements.txt:
+
+prometheus-client>=0.19.0
+
+# Then run:
+# pip install prometheus-client
+
+# STEP 2: Create src/monitoring/prometheus_metrics.py
+
+"""
+Prometheus Metrics Exporter
+============================
+
+Exposes metrics for Prometheus scraping at /metrics endpoint.
+"""
+
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from fastapi import Response
+import time
+
+# Define metrics
+http_requests_total = Counter(
+    'http_requests_total',
+    'Total HTTP requests',
+    ['method', 'endpoint', 'status']
+)
+
+http_request_duration_seconds = Histogram(
+    'http_request_duration_seconds',
+    'HTTP request latency',
+    ['method', 'endpoint']
+)
+
+cache_hits_total = Counter('cache_hits_total', 'Total cache hits')
+cache_misses_total = Counter('cache_misses_total', 'Total cache misses')
+cache_requests_total = Counter('cache_requests_total', 'Total cache requests')
+
+openai_api_calls_total = Counter(
+    'openai_api_calls_total',
+    'Total OpenAI API calls',
+    ['model', 'operation']
+)
+
+openai_api_cost_usd = Counter(
+    'openai_api_cost_usd',
+    'Estimated OpenAI API cost in USD'
+)
+
+xero_api_requests_total = Counter(
+    'xero_api_requests_total',
+    'Total Xero API requests',
+    ['operation']
+)
+
+xero_api_errors_total = Counter(
+    'xero_api_errors_total',
+    'Total Xero API errors',
+    ['error_type']
+)
+
+active_sessions = Gauge('active_sessions', 'Number of active chat sessions')
+
+def get_metrics() -> Response:
+    """Return Prometheus metrics"""
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST
+    )
+
+# STEP 3: Add to enhanced_api.py imports (around line 60)
+
+from monitoring.prometheus_metrics import (
+    http_requests_total,
+    http_request_duration_seconds,
+    cache_hits_total,
+    cache_misses_total,
+    openai_api_calls_total,
+    get_metrics
+)
+
+# STEP 4: Add /metrics endpoint to enhanced_api.py (around line 480)
+
+@app.get("/metrics")
+async def metrics_endpoint():
+    """Prometheus metrics endpoint"""
+    return get_metrics()
+
+# STEP 5: Add request tracking middleware
+# Create a new middleware class in enhanced_api.py:
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+import time
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+
+        # Process request
+        response = await call_next(request)
+
+        # Record metrics
+        duration = time.time() - start_time
+
+        http_requests_total.labels(
+            method=request.method,
+            endpoint=request.url.path,
+            status=response.status_code
+        ).inc()
+
+        http_request_duration_seconds.labels(
+            method=request.method,
+            endpoint=request.url.path
+        ).observe(duration)
+
+        return response
+
+# STEP 6: Add metrics middleware (around line 125)
+
+app.add_middleware(MetricsMiddleware)
+
+# STEP 7: Add cache metrics tracking
+# In cache hit/miss code (around line 660), add:
+
+if cached_response:
+    cache_hits_total.inc()
+    cache_requests_total.inc()
+else:
+    cache_misses_total.inc()
+    cache_requests_total.inc()
+
+# STEP 8: Add OpenAI call tracking
+# Wherever OpenAI API is called, add:
+
+openai_api_calls_total.labels(
+    model=config.OPENAI_MODEL,
+    operation="chat_completion"
+).inc()
+
+# Estimate cost ($0.02 per 1K tokens, ~2K tokens average)
+openai_api_cost_usd.inc(0.04)
+
+# VERIFICATION:
+# After applying, visit http://localhost:8003/metrics
+# Should see Prometheus-format metrics

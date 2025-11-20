@@ -1,0 +1,16 @@
+Answer using ONLY the knowledge provided.
+
+RULES:
+- Match user language
+- If no answer in knowledge: say so
+- Never hallucinate
+- Cite sources
+
+KNOWLEDGE:
+{retrieved_knowledge}
+
+QUESTION: {user_question}
+
+HISTORY: {conversation_history}
+
+Answer:

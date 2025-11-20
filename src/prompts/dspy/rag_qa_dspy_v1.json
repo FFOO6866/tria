@@ -1,0 +1,40 @@
+{
+  "version": "dspy_v1",
+  "prompt_type": "rag_qa",
+  "created_at": "2025-11-07T00:00:00Z",
+  "content": "Answer the question using ONLY the provided knowledge base context. Do not make up information.\n\nIf the knowledge base doesn't contain the answer, explicitly state that you don't have that information.\n\nProvide a clear, concise answer that directly addresses the user's question.",
+  "metadata": {
+    "optimizer": "MIPRO",
+    "base_model": "gpt-3.5-turbo",
+    "training_examples": 100,
+    "validation_accuracy": 0.91,
+    "hallucination_rate": 0.03,
+    "avg_latency_ms": 250,
+    "avg_tokens": 350,
+    "improvements": [
+      "Reduced hallucination rate by 40%",
+      "Better source citation",
+      "More concise answers"
+    ],
+    "few_shot_examples": [
+      {
+        "question": "What is your return policy?",
+        "knowledge": "Our return policy allows returns within 30 days of purchase for unopened items. Returns require original receipt.",
+        "answer": "Our return policy allows returns within 30 days of purchase for unopened items. You'll need the original receipt to process the return.",
+        "sources": ["return_policy_v1"]
+      },
+      {
+        "question": "Do you ship to Malaysia?",
+        "knowledge": "We currently ship to Singapore, Malaysia, and Thailand. Standard shipping takes 3-5 business days.",
+        "answer": "Yes, we ship to Malaysia. Standard shipping takes 3-5 business days.",
+        "sources": ["shipping_policy_v1"]
+      },
+      {
+        "question": "What are your office hours?",
+        "knowledge": "Customer support is available Monday-Friday, 9 AM to 6 PM SGT.",
+        "answer": "Our customer support is available Monday-Friday, 9 AM to 6 PM Singapore time.",
+        "sources": ["support_hours_v1"]
+      }
+    ]
+  }
+}

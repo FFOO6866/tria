@@ -12,14 +12,13 @@ NO MOCKING - Retrieves real conversation data from PostgreSQL.
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from kailash.workflow.builder import WorkflowBuilder
-from kailash.runtime.local import LocalRuntime
+from database_operations import get_db_session, get_conversation_session, get_conversation_messages
 
 
 def build_conversation_context(
     session_id: str,
     max_messages: int = 10,
-    runtime: Optional[LocalRuntime] = None
+    runtime: Optional[Any] = None  # Kept for backward compatibility, not used
 ) -> Dict[str, Any]:
     """
     Build complete conversation context for GPT-4
@@ -30,7 +29,7 @@ def build_conversation_context(
     Args:
         session_id: Session identifier
         max_messages: Maximum number of messages to include
-        runtime: Kailash LocalRuntime instance (creates new if not provided)
+        runtime: DEPRECATED - Kept for API compatibility only
 
     Returns:
         Dictionary containing:
@@ -56,52 +55,16 @@ def build_conversation_context(
             "user_id": "6591234567"
         }
     """
-    if runtime is None:
-        runtime = LocalRuntime()
-
-    # Step 1: Retrieve session metadata
-    session_workflow = WorkflowBuilder()
-    session_workflow.add_node("ConversationSessionListNode", "get_session", {
-        "filters": {"session_id": session_id},
-        "limit": 1
-    })
-
     try:
-        session_results, _ = runtime.execute(session_workflow.build())
-        session_data = session_results.get('get_session', [])
+        # Step 1: Retrieve session metadata and messages using direct SQLAlchemy
+        with get_db_session() as db_session:
+            session = get_conversation_session(db_session, session_id)
 
-        # Extract session
-        session = None
-        if isinstance(session_data, list) and len(session_data) > 0:
-            if isinstance(session_data[0], dict):
-                if 'records' in session_data[0]:
-                    records = session_data[0]['records']
-                    session = records[0] if len(records) > 0 else None
-                else:
-                    session = session_data[0]
+            if not session:
+                raise ValueError(f"Session {session_id} not found in database")
 
-        if not session:
-            raise ValueError(f"Session {session_id} not found in database")
-
-        # Step 2: Retrieve message history
-        messages_workflow = WorkflowBuilder()
-        messages_workflow.add_node("ConversationMessageListNode", "get_messages", {
-            "filters": {"session_id": session_id},
-            "order_by": ["timestamp"],  # Oldest first
-            "limit": max_messages
-        })
-
-        messages_results, _ = runtime.execute(messages_workflow.build())
-        messages_data = messages_results.get('get_messages', [])
-
-        # Extract messages
-        messages = []
-        if isinstance(messages_data, list) and len(messages_data) > 0:
-            if isinstance(messages_data[0], dict):
-                if 'records' in messages_data[0]:
-                    messages = messages_data[0]['records']
-                else:
-                    messages = messages_data
+            # Step 2: Retrieve message history
+            messages = get_conversation_messages(db_session, session_id, limit=max_messages)
 
         # Step 3: Format messages for GPT-4
         formatted_messages = format_messages_for_gpt4(messages)
@@ -252,7 +215,7 @@ Remember this context when processing the current request.
 def get_recent_user_messages(
     session_id: str,
     limit: int = 5,
-    runtime: Optional[LocalRuntime] = None
+    runtime: Optional[Any] = None  # Kept for backward compatibility, not used
 ) -> List[str]:
     """
     Get recent user messages as simple text list
@@ -262,7 +225,7 @@ def get_recent_user_messages(
     Args:
         session_id: Session identifier
         limit: Maximum number of messages to retrieve
-        runtime: Kailash LocalRuntime instance
+        runtime: DEPRECATED - Kept for API compatibility only
 
     Returns:
         List of user message content strings (oldest first)
@@ -272,32 +235,15 @@ def get_recent_user_messages(
         >>> print(recent)
         ["I need pizza boxes", "400 pieces", "10 inch size"]
     """
-    if runtime is None:
-        runtime = LocalRuntime()
-
-    # Retrieve user messages only
-    workflow = WorkflowBuilder()
-    workflow.add_node("ConversationMessageListNode", "get_user_messages", {
-        "filters": {
-            "session_id": session_id,
-            "role": "user"
-        },
-        "order_by": ["timestamp"],
-        "limit": limit
-    })
-
     try:
-        results, _ = runtime.execute(workflow.build())
-        messages_data = results.get('get_user_messages', [])
-
-        # Extract messages
-        messages = []
-        if isinstance(messages_data, list) and len(messages_data) > 0:
-            if isinstance(messages_data[0], dict):
-                if 'records' in messages_data[0]:
-                    messages = messages_data[0]['records']
-                else:
-                    messages = messages_data
+        # Retrieve user messages only using direct SQLAlchemy
+        with get_db_session() as db_session:
+            messages = get_conversation_messages(
+                db_session,
+                session_id,
+                limit=limit,
+                role_filter="user"
+            )
 
         # Extract content only
         return [msg.get('content', '') for msg in messages if msg.get('content')]
@@ -348,14 +294,14 @@ def detect_conversation_intent(
 
 def get_session_summary(
     session_id: str,
-    runtime: Optional[LocalRuntime] = None
+    runtime: Optional[Any] = None  # Kept for backward compatibility, not used
 ) -> Dict[str, Any]:
     """
     Get quick session summary for logging/debugging
 
     Args:
         session_id: Session identifier
-        runtime: Kailash LocalRuntime instance
+        runtime: DEPRECATED - Kept for API compatibility only
 
     Returns:
         Dictionary with session summary:
@@ -369,29 +315,10 @@ def get_session_summary(
             "status": "active" or "closed"
         }
     """
-    if runtime is None:
-        runtime = LocalRuntime()
-
     try:
-        # Get session
-        workflow = WorkflowBuilder()
-        workflow.add_node("ConversationSessionListNode", "get_session", {
-            "filters": {"session_id": session_id},
-            "limit": 1
-        })
-
-        results, _ = runtime.execute(workflow.build())
-        session_data = results.get('get_session', [])
-
-        # Extract session
-        session = None
-        if isinstance(session_data, list) and len(session_data) > 0:
-            if isinstance(session_data[0], dict):
-                if 'records' in session_data[0]:
-                    records = session_data[0]['records']
-                    session = records[0] if len(records) > 0 else None
-                else:
-                    session = session_data[0]
+        # Get session using direct SQLAlchemy
+        with get_db_session() as db_session:
+            session = get_conversation_session(db_session, session_id)
 
         if not session:
             return {"error": f"Session {session_id} not found"}

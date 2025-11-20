@@ -71,6 +71,21 @@ from production import (
     get_circuit_breaker_status
 )
 
+# Audit logging for compliance (GDPR, SOC2)
+from monitoring.audit_logger import audit_log, AuditEvent, AuditMiddleware
+
+# Prometheus metrics for monitoring
+from monitoring.prometheus_metrics import (
+    get_metrics,
+    record_cache_hit,
+    record_cache_miss,
+    record_openai_call,
+    record_xero_request,
+    record_order_created,
+    http_requests_total,
+    http_request_duration_seconds
+)
+
 # Workflow timeout protection (prevents hanging workflows)
 from utils.timeout import execute_with_timeout, WorkflowTimeoutError
 
@@ -88,10 +103,18 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
 
-# Kailash imports
-from kailash.runtime.local import LocalRuntime
-from kailash.workflow.builder import WorkflowBuilder
-from dataflow import DataFlow
+# Database imports - replaced Kailash with direct SQLAlchemy
+from database_operations import (
+    get_db_session,
+    list_outlets,
+    get_outlet_by_id,
+    get_outlet_by_name,
+    list_products,
+    get_product_by_sku,
+    create_order,
+    get_order_by_id,
+    list_orders
+)
 
 # Conversation memory imports
 from memory.session_manager import SessionManager
@@ -122,9 +145,55 @@ app.add_middleware(IdempotencyMiddleware)
 # Add SSE middleware for streaming support
 app.add_middleware(SSEMiddleware, timeout=60)
 
+# Add audit logging middleware for compliance
+app.add_middleware(AuditMiddleware)
+
+
+# ============================================================================
+# Prometheus Metrics Middleware
+# ============================================================================
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware to track HTTP request metrics for Prometheus.
+
+    Records:
+    - Request count by method, endpoint, and status code
+    - Request duration by method and endpoint
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+
+        # Process request
+        response = await call_next(request)
+
+        # Record metrics
+        duration = time.time() - start_time
+
+        # Track request count and duration
+        http_requests_total.labels(
+            method=request.method,
+            endpoint=request.url.path,
+            status=response.status_code
+        ).inc()
+
+        http_request_duration_seconds.labels(
+            method=request.method,
+            endpoint=request.url.path
+        ).observe(duration)
+
+        return response
+
+
+# Add metrics middleware
+app.add_middleware(MetricsMiddleware)
+
+
 # Global state
-db: Optional[DataFlow] = None
-runtime: Optional[LocalRuntime] = None
 session_manager: Optional[SessionManager] = None
 intent_classifier: Optional[IntentClassifier] = None
 customer_service_agent: Optional[EnhancedCustomerServiceAgent] = None
@@ -137,8 +206,8 @@ prompt_manager: Optional[PromptManager] = None
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize DataFlow and runtime on startup"""
-    global db, runtime, session_manager, intent_classifier, customer_service_agent, async_customer_service_agent, knowledge_base, cache, chat_cache, prompt_manager
+    """Initialize database and components on startup"""
+    global session_manager, intent_classifier, customer_service_agent, async_customer_service_agent, knowledge_base, cache, chat_cache, prompt_manager
 
     print("=" * 60)
     print("TRIA AI-BPO Enhanced Platform Starting...")
@@ -167,37 +236,27 @@ async def startup_event():
         print(f"[WARNING] Failed to initialize error tracking: {e}")
         print("[INFO] Continuing without error tracking")
 
-    # Initialize DataFlow (optional - only needed for order processing, not chatbot)
+    # Initialize database tables (SQLAlchemy ORM)
     try:
-        db = DataFlow(
-            database_url=database_url,
-            skip_registry=True,
-            auto_migrate=True
-        )
+        from database import get_db_engine
+        from models.order_orm import create_tables as create_order_tables
+        from models.conversation_orm import create_tables as create_conversation_tables
 
-        from models.dataflow_models import initialize_dataflow_models
-        from models.conversation_models import initialize_conversation_models
+        engine = get_db_engine(database_url)
 
-        initialize_dataflow_models(db)
-        initialize_conversation_models(db)
+        create_order_tables(engine)
+        create_conversation_tables(engine)
 
-        print("[OK] DataFlow initialized with 8 models")
+        print("[OK] Database initialized with SQLAlchemy ORM")
         print("     - Product, Outlet, Order, DeliveryOrder, Invoice")
         print("     - ConversationSession, ConversationMessage, UserInteractionSummary")
-        print("     - 72 CRUD nodes available (9 per model)")
 
     except Exception as e:
-        print(f"[WARNING] Failed to initialize DataFlow: {e}")
-        print("[INFO] Continuing without database - TRIA chatbot features will still work")
-        print("[INFO] Only order processing features will be unavailable")
-        db = None  # Chatbot doesn't require PostgreSQL
+        print(f"[WARNING] Failed to initialize database: {e}")
+        print("[INFO] Continuing without database - some features may be unavailable")
 
-    # Initialize runtime
-    runtime = LocalRuntime()
-    print("[OK] LocalRuntime initialized")
-
-    # Initialize session manager
-    session_manager = SessionManager(runtime=runtime)
+    # Initialize session manager (no longer needs runtime)
+    session_manager = SessionManager(runtime=None)
     print("[OK] SessionManager initialized")
 
     # Initialize advanced caching system
@@ -422,8 +481,8 @@ async def health_check():
     # Load balancers need to know if Xero is reachable
     if config.xero_configured:
         try:
-            from integrations.xero_client import XeroAPIClient
-            xero_client = XeroAPIClient()
+            from integrations.xero_client import get_xero_client
+            xero_client = get_xero_client()
 
             # Make a lightweight API call to verify connectivity
             # GET /Organisation is a simple endpoint that just returns tenant info
@@ -476,40 +535,24 @@ async def health_check():
     return health_status
 
 
+@app.get("/metrics")
+async def metrics_endpoint():
+    """
+    Prometheus metrics endpoint.
+
+    Exposes application metrics in Prometheus text format for scraping.
+    Includes HTTP request metrics, cache performance, OpenAI usage, and more.
+    """
+    return get_metrics()
+
+
 @app.get("/api/outlets")
-async def list_outlets():
+async def list_outlets_endpoint():
     """List all outlets from database"""
 
-    if not db or not runtime:
-        raise HTTPException(status_code=503, detail="Service not initialized")
-
     try:
-        workflow = WorkflowBuilder()
-        workflow.add_node("OutletListNode", "list_outlets", {
-            "limit": 100
-        })
-
-        # Execute workflow with timeout protection
-        results, _ = execute_with_timeout(
-            runtime.execute,
-            args=(workflow.build(),),
-            timeout_seconds=60
-        )
-        outlets_result = results.get('list_outlets', [])
-
-        # Handle different result structures
-        outlets = []
-        if isinstance(outlets_result, list):
-            for item in outlets_result:
-                if isinstance(item, dict) and 'records' in item:
-                    outlets.extend(item['records'])
-                elif isinstance(item, dict):
-                    outlets.append(item)
-        elif isinstance(outlets_result, dict):
-            if 'records' in outlets_result:
-                outlets = outlets_result['records']
-            else:
-                outlets = [outlets_result]
+        with get_db_session() as session:
+            outlets = list_outlets(session, limit=100)
 
         return {
             "outlets": outlets,
@@ -545,13 +588,13 @@ async def chatbot_endpoint(request: ChatbotRequest):
     logger = logging.getLogger(__name__)
 
     # Check if chatbot components are initialized
-    if not all([db, runtime, session_manager]):
+    if not session_manager:
         raise HTTPException(
             status_code=503,
-            detail="Core services not initialized. Please check server logs."
+            detail="Session manager not initialized. Please check server logs."
         )
 
-    if not all([intent_classifier, customer_service_agent, knowledge_base]):
+    if not all([intent_classifier, async_customer_service_agent, knowledge_base]):
         raise HTTPException(
             status_code=503,
             detail="Chatbot components not initialized. Please check OPENAI_API_KEY configuration."
@@ -568,28 +611,11 @@ async def chatbot_endpoint(request: ChatbotRequest):
         outlet_id_resolved = request.outlet_id
 
         if not outlet_id_resolved and request.outlet_name:
-            # Look up outlet by name
-            outlets_workflow = WorkflowBuilder()
-            outlets_workflow.add_node("OutletReadNode", "get_outlets", {
-                "filters": {"name": request.outlet_name},
-                "limit": 1
-            })
-            # Execute workflow with timeout protection
-            outlet_results, _ = execute_with_timeout(
-                runtime.execute,
-                args=(outlets_workflow.build(),),
-                timeout_seconds=60
-            )
-            outlet_data = outlet_results.get('get_outlets', [])
-
-            if isinstance(outlet_data, list) and len(outlet_data) > 0:
-                if isinstance(outlet_data[0], dict):
-                    if 'records' in outlet_data[0]:
-                        records = outlet_data[0]['records']
-                        if len(records) > 0:
-                            outlet_id_resolved = records[0].get('id')
-                    elif 'id' in outlet_data[0]:
-                        outlet_id_resolved = outlet_data[0]['id']
+            # Look up outlet by name using direct database query
+            with get_db_session() as db_session:
+                outlet = get_outlet_by_name(db_session, request.outlet_name)
+                if outlet:
+                    outlet_id_resolved = outlet.get('id')
 
             logger.info(f"[CHATBOT] Resolved outlet '{request.outlet_name}' to ID: {outlet_id_resolved}")
 
@@ -660,6 +686,7 @@ async def chatbot_endpoint(request: ChatbotRequest):
                 if cached_response:
                     # Cache hit! Return cached response immediately
                     logger.info(f"[CACHE HIT] Returning cached response for: {request.message[:50]}...")
+                    record_cache_hit()  # Prometheus metric
 
                     # Update metadata to indicate cached response
                     if "metadata" not in cached_response:
@@ -685,6 +712,10 @@ async def chatbot_endpoint(request: ChatbotRequest):
             except Exception as cache_error:
                 logger.warning(f"Cache check failed: {cache_error}")
                 # Continue with normal flow if cache check fails
+
+        # If we reach here, it's a cache miss (either no cache or not found)
+        if chat_cache:
+            record_cache_miss()  # Prometheus metric
 
         # Classify intent
         intent_result = intent_classifier.classify_intent(
@@ -969,6 +1000,27 @@ Return a JSON object with:
                                 if order_row:
                                     created_order_id = order_row[0]
                                     print(f"[ORDER CREATION DEBUG] SUCCESS: Order created successfully! ID: {created_order_id}")
+
+                                    # Record order creation metrics
+                                    record_order_created(order_value=float(total_dec))
+
+                                    # Audit log successful order creation
+                                    try:
+                                        audit_log(
+                                            event_type=AuditEvent.ORDER_CREATED,
+                                            user_id=request.user_id or "anonymous",
+                                            resource="order",
+                                            action="create",
+                                            details={
+                                                "order_id": created_order_id,
+                                                "outlet_id": outlet_id,
+                                                "total_amount": float(total_dec),
+                                                "item_count": len(line_items)
+                                            },
+                                            success=True
+                                        )
+                                    except Exception:
+                                        pass  # Don't fail order if audit fails
                                 else:
                                     print(f"[ORDER CREATION DEBUG] ERROR: No order ID returned from INSERT")
                         except Exception as e:
@@ -1015,6 +1067,13 @@ Return a JSON object with:
                             # Execute Xero workflow
                             xero_result = xero_orchestrator.execute_workflow(xero_order_data)
 
+                            # Record Xero API request metrics
+                            record_xero_request(
+                                operation="create_invoice",
+                                success=xero_result['success'],
+                                error_type=xero_result.get('error_type') if not xero_result['success'] else None
+                            )
+
                             if xero_result['success']:
                                 xero_workflow_success = True
                                 xero_invoice_id = xero_result.get('invoice_id')
@@ -1025,6 +1084,24 @@ Return a JSON object with:
                                 agent_timeline.extend(xero_agent_timeline)
 
                                 logger.info(f"[XERO] ✓ Workflow completed: Invoice {xero_invoice_id}")
+
+                                # Audit log successful Xero invoice creation
+                                try:
+                                    audit_log(
+                                        event_type=AuditEvent.XERO_INVOICE_CREATED,
+                                        user_id=request.user_id or "anonymous",
+                                        resource="xero_invoice",
+                                        action="create",
+                                        details={
+                                            "invoice_id": xero_invoice_id,
+                                            "draft_order_id": xero_draft_order_id,
+                                            "order_id": created_order_id,
+                                            "customer": outlet_name_full
+                                        },
+                                        success=True
+                                    )
+                                except Exception:
+                                    pass  # Don't fail Xero workflow if audit fails
                             else:
                                 logger.warning(f"[XERO] Workflow failed: {xero_result.get('message')}")
 
@@ -1210,8 +1287,9 @@ Return a JSON object with:
                 top_n_per_collection=3
             )
 
-            # Generate response using customer service agent (includes GPT-4 + RAG)
-            cs_response = customer_service_agent.handle_message(
+            # Generate response using async customer service agent (includes GPT-4 + RAG)
+            # PERFORMANCE FIX: Using async agent for parallel execution (18s → <10s)
+            cs_response = await async_customer_service_agent.handle_message(
                 message=request.message,
                 conversation_history=formatted_history,
                 user_context={
@@ -1261,8 +1339,9 @@ Return a JSON object with:
         else:  # general_query
             logger.info("[CHATBOT] Handling general query with GPT-4")
 
-            # Use customer service agent for general response
-            cs_response = customer_service_agent.handle_message(
+            # Use async customer service agent for general response
+            # PERFORMANCE FIX: Using async agent for parallel execution (18s → <10s)
+            cs_response = await async_customer_service_agent.handle_message(
                 message=request.message,
                 conversation_history=formatted_history,
                 user_context={
@@ -1383,6 +1462,28 @@ Return a JSON object with:
             except Exception as cache_error:
                 logger.warning(f"Cache save failed: {cache_error}")
                 # Continue even if cache save fails
+
+        # ====================================================================
+        # AUDIT LOG: Record chatbot interaction for compliance
+        # ====================================================================
+        try:
+            audit_log(
+                event_type=AuditEvent.DATA_ACCESS,
+                user_id=request.user_id or "anonymous",
+                resource="chatbot",
+                action="query",
+                details={
+                    "intent": intent_result.intent if intent_result else "unknown",
+                    "message_length": len(request.message),
+                    "has_order_id": response_order_id is not None,
+                    "has_citations": len(citations) > 0 if citations else False
+                },
+                success=True,
+                ip_address=None  # FastAPI request object needed for IP
+            )
+        except Exception as audit_error:
+            logger.warning(f"Audit logging failed: {audit_error}")
+            # Don't fail the request if audit logging fails
 
         return response_data
 
@@ -1518,26 +1619,10 @@ async def process_order_enhanced(request: OrderRequest):
         # Create products_map for later use (pricing, stock checking)
         products_map = {p['sku']: p for p in relevant_products}
 
-        # Get outlet count from database
-        outlets_workflow = WorkflowBuilder()
-        outlets_workflow.add_node("OutletListNode", "count_outlets", {"limit": 1000})
-        # Execute workflow with timeout protection
-        outlet_results, _ = execute_with_timeout(
-            runtime.execute,
-            args=(outlets_workflow.build(),),
-            timeout_seconds=60
-        )
-
-        outlet_data = outlet_results.get('count_outlets', [])
-        if isinstance(outlet_data, list) and len(outlet_data) > 0:
-            if isinstance(outlet_data[0], dict) and 'count' in outlet_data[0]:
-                total_outlets = outlet_data[0]['count']
-            elif isinstance(outlet_data[0], dict) and 'records' in outlet_data[0]:
-                total_outlets = len(outlet_data[0]['records'])
-            else:
-                total_outlets = len(outlet_data)
-        else:
-            total_outlets = 0
+        # Get outlet count from database using direct SQLAlchemy query
+        with get_db_session() as db_session:
+            outlets_list = list_outlets(db_session, limit=1000)
+            total_outlets = len(outlets_list)
 
         # Build focused system prompt with only relevant products
         catalog_section = format_search_results_for_llm(relevant_products)

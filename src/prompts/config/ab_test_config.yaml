@@ -1,0 +1,117 @@
+# A/B Testing Configuration for Prompt Management
+# ==================================================
+#
+# This configuration controls which prompt versions are deployed and how
+# traffic is split between different versions for A/B testing.
+#
+# Configuration per prompt type:
+#   - current_version: The primary version being tested (e.g., "dspy_v1")
+#   - rollout_percentage: Percentage of users getting current_version (0-100)
+#   - control_version: The baseline/control version (e.g., "manual_v1")
+#   - control_percentage: Percentage of users getting control_version (0-100)
+#   - enabled: Whether A/B testing is active (true/false)
+#
+# Note: rollout_percentage + control_percentage must equal 100
+#
+# Gradual Rollout Strategy:
+#   Phase 1: 10% rollout (validate no regressions)
+#   Phase 2: 50% rollout (gather statistical significance)
+#   Phase 3: 90% rollout (final validation)
+#   Phase 4: 100% rollout (full deployment)
+
+# Intent Classification
+# ----------------------
+# Status: DSPy optimized version in testing
+# Goal: Improve accuracy from 90% to 93-95%
+intent_classification:
+  current_version: "dspy_v1"
+  rollout_percentage: 90
+  control_version: "manual_v1"
+  control_percentage: 10
+  enabled: true
+
+# RAG Question Answering
+# -----------------------
+# Status: Using manual version (DSPy optimization pending)
+# Goal: Reduce hallucination rate by 30-50%
+rag_qa:
+  current_version: "manual_v1"
+  rollout_percentage: 100
+  control_version: "manual_v1"
+  control_percentage: 0
+  enabled: false  # No A/B test yet
+
+# Customer Service Response
+# --------------------------
+# Status: Manual version only
+# Goal: Improve response quality by 10-15%
+customer_service:
+  current_version: "manual_v1"
+  rollout_percentage: 100
+  control_version: "manual_v1"
+  control_percentage: 0
+  enabled: false
+
+# Tone Guidelines
+# ---------------
+# Status: Stable manual version
+# Note: Tone is less critical for A/B testing
+tone_guidelines:
+  current_version: "manual_v1"
+  rollout_percentage: 100
+  control_version: "manual_v1"
+  control_percentage: 0
+  enabled: false
+
+# ============================================================================
+# METRICS TRACKING
+# ============================================================================
+#
+# Each A/B test should track:
+# 1. Accuracy: Intent classification correctness
+# 2. Latency: Response time in milliseconds
+# 3. Token usage: Input/output tokens per request
+# 4. User satisfaction: Feedback scores
+# 5. Cost: API costs per 1K requests
+#
+# Decision criteria for promoting DSPy version:
+# - Accuracy: +3% improvement or neutral
+# - Latency: No regression (within 10%)
+# - Token usage: -20% reduction or neutral
+# - User satisfaction: +0.3 points or neutral
+# - Cost: -20% reduction or neutral
+#
+# ============================================================================
+
+# ============================================================================
+# EXAMPLE: Promoting a DSPy Version
+# ============================================================================
+#
+# Step 1: Initial testing (10%)
+# ------------------------------
+# intent_classification:
+#   current_version: "dspy_v2"
+#   rollout_percentage: 10
+#   control_version: "manual_v1"
+#   control_percentage: 90
+#   enabled: true
+#
+# Step 2: After 24 hours validation (50%)
+# ----------------------------------------
+# intent_classification:
+#   current_version: "dspy_v2"
+#   rollout_percentage: 50
+#   control_version: "manual_v1"
+#   control_percentage: 50
+#   enabled: true
+#
+# Step 3: After 1 week validation (100%)
+# ---------------------------------------
+# intent_classification:
+#   current_version: "dspy_v2"
+#   rollout_percentage: 100
+#   control_version: "manual_v1"
+#   control_percentage: 0
+#   enabled: false  # Disable A/B test, fully deployed
+#
+# ============================================================================

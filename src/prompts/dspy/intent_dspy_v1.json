@@ -1,0 +1,49 @@
+{
+  "version": "dspy_v1",
+  "prompt_type": "intent_classification",
+  "created_at": "2025-11-07T00:00:00Z",
+  "content": "Classify the user's intent based on their message and conversation history.\n\nIntents:\n- order_placement: User wants to place a new order\n- order_status: User is checking on existing order status\n- product_inquiry: User asking about specific products\n- policy_question: User asking about company policies\n- complaint: User has an issue or complaint\n- greeting: User is greeting\n- general_query: Other queries\n\nAnalyze the message and return the most likely intent with confidence score.",
+  "metadata": {
+    "optimizer": "BootstrapFewShot",
+    "base_model": "gpt-3.5-turbo",
+    "training_examples": 50,
+    "validation_accuracy": 0.94,
+    "avg_latency_ms": 180,
+    "avg_tokens": 220,
+    "improvements": [
+      "Better few-shot examples",
+      "Optimized reasoning chain",
+      "Reduced token usage by 25%"
+    ],
+    "few_shot_examples": [
+      {
+        "message": "I'd like to order 50 boxes",
+        "history": "[{\"role\": \"user\", \"content\": \"Hello, I'm from ABC Corp\"}]",
+        "intent": "order_placement",
+        "confidence": 0.95,
+        "reasoning": "User explicitly states wanting to order, and context shows business identification"
+      },
+      {
+        "message": "Where is my order?",
+        "history": "[{\"role\": \"user\", \"content\": \"I ordered last week\"}]",
+        "intent": "order_status",
+        "confidence": 0.98,
+        "reasoning": "User is asking about location of existing order"
+      },
+      {
+        "message": "Do you have plastic containers?",
+        "history": "[]",
+        "intent": "product_inquiry",
+        "confidence": 0.92,
+        "reasoning": "User asking about specific product availability"
+      },
+      {
+        "message": "What's your return policy?",
+        "history": "[]",
+        "intent": "policy_question",
+        "confidence": 0.97,
+        "reasoning": "User asking about company policy"
+      }
+    ]
+  }
+}

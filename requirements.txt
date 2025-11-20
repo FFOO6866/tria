@@ -1,12 +1,12 @@
 # TRIA AI-BPO POV Requirements
-# Generated: 2025-10-16
+# Updated: 2025-11-21
 # Python 3.10+
 #
-# Note: Kailash SDK 0.9+ has specific dependency requirements.
-# This file installs Kailash and its dependencies, plus additional packages for the POV.
+# REFACTORED: Removed Kailash SDK dependency
+# Using standard Python/FastAPI with SQLAlchemy ORM
 
-# Core Kailash SDK (will install its own dependencies including pytest, black, numpy, etc.)
-kailash
+# Core SQLAlchemy for database operations
+sqlalchemy>=2.0.0
 
 # Additional Data Processing (beyond Kailash dependencies)
 pandas>=2.0.0

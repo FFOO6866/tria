@@ -1,0 +1,24 @@
+Classify message intent. Return JSON only.
+
+INTENTS:
+1. order_placement - wants to order
+2. order_status - checking existing order
+3. product_inquiry - specific product questions
+4. policy_question - company policies/procedures
+5. complaint - issue/problem
+6. greeting - hello/hi
+7. general_query - other
+
+RULES:
+- Use conversation history (60% weight)
+- If business identified, "need supplies"/"want order" → order_placement
+- product_inquiry: specific products. policy_question: general rules
+- Return confidence 0.0-1.0
+
+JSON format:
+{
+  "intent": "intent_name",
+  "confidence": 0.95,
+  "reasoning": "why",
+  "extracted_entities": {"order_id": "123", "product_names": ["boxes"]}
+}

@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRIA AI-BPO Streaming Chat - SSE Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .chat-container {
+            height: 500px;
+            overflow-y: auto;
+            padding: 24px;
+            background: #f7fafc;
+        }
+
+        .message {
+            margin-bottom: 16px;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message-content {
+            display: inline-block;
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            line-height: 1.5;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .message.assistant .message-content {
+            background: white;
+            color: #2d3748;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-indicator {
+            padding: 8px 16px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #edf2f7;
+            color: #4a5568;
+        }
+
+        .status-indicator .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #cbd5e0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .intent-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .intent-badge.policy_question {
+            background: #bee3f8;
+            color: #2c5282;
+        }
+
+        .intent-badge.product_inquiry {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .intent-badge.greeting {
+            background: #fbd38d;
+            color: #7c2d12;
+        }
+
+        .intent-badge.general_query {
+            background: #e9d8fd;
+            color: #44337a;
+        }
+
+        .input-container {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 12px;
+        }
+
+        #messageInput {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        #messageInput:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        #sendButton {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        #sendButton:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        #sendButton:active {
+            transform: translateY(0);
+        }
+
+        #sendButton:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .metadata {
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: #f7fafc;
+            border-left: 3px solid #667eea;
+            font-size: 12px;
+            color: #718096;
+            border-radius: 4px;
+        }
+
+        .metadata-item {
+            margin: 2px 0;
+        }
+
+        .error-message {
+            padding: 12px 16px;
+            background: #fed7d7;
+            color: #742a2a;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>TRIA AI-BPO Streaming Chat</h1>
+            <p>Server-Sent Events (SSE) Demo - Progressive Response Rendering</p>
+        </div>
+
+        <div class="chat-container" id="chatContainer">
+            <div class="message assistant">
+                <div class="message-content">
+                    👋 Hello! I'm TRIA's AI assistant with streaming responses.
+                    Ask me about our policies, products, or place an order.
+                    Watch as I think, retrieve knowledge, and generate responses in real-time!
+                </div>
+            </div>
+        </div>
+
+        <div class="input-container">
+            <div class="input-wrapper">
+                <input
+                    type="text"
+                    id="messageInput"
+                    placeholder="Ask me anything... (e.g., 'What's your refund policy?')"
+                    autocomplete="off"
+                />
+                <button id="sendButton">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE_URL = 'http://localhost:8001';  // Enhanced API port
+        const STREAM_ENDPOINT = `${API_BASE_URL}/chat/stream`;
+
+        // State
+        let isStreaming = false;
+        let currentEventSource = null;
+        let currentMessageElement = null;
+        let currentStatusElement = null;
+        let currentMetadata = {};
+
+        // DOM Elements
+        const chatContainer = document.getElementById('chatContainer');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+
+        // ====================================================================
+        // EVENT HANDLERS
+        // ====================================================================
+
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // ====================================================================
+        // MAIN LOGIC
+        // ====================================================================
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message || isStreaming) return;
+
+            // Clear input
+            messageInput.value = '';
+
+            // Add user message to chat
+            addUserMessage(message);
+
+            // Start streaming
+            await streamResponse(message);
+        }
+
+        async function streamResponse(message) {
+            isStreaming = true;
+            sendButton.disabled = true;
+            currentMetadata = {};
+
+            try {
+                // Use fetch POST to send message, then connect to SSE
+                // Note: EventSource doesn't support POST, so we use a workaround
+                // Alternative approach: Use fetch with stream
+                const response = await fetch(STREAM_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        user_id: 'demo_user',
+                        language: 'en'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // Read stream
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    // Decode chunk
+                    const chunk = decoder.decode(value, { stream: true });
+
+                    // Process SSE events
+                    const events = chunk.split('\n\n').filter(e => e.trim());
+                    for (const event of events) {
+                        if (event.startsWith('data: ')) {
+                            const data = JSON.parse(event.substring(6));
+                            handleStreamEvent(data);
+                        }
+                    }
+                }
+
+                // Stream complete
+                handleStreamComplete();
+
+            } catch (error) {
+                console.error('Streaming error:', error);
+                showError(`Failed to stream response: ${error.message}`);
+            } finally {
+                isStreaming = false;
+                sendButton.disabled = false;
+            }
+        }
+
+        function handleStreamEvent(event) {
+            console.log('Stream event:', event);
+
+            switch (event.type) {
+                case 'status':
+                    handleStatus(event.data);
+                    break;
+
+                case 'intent':
+                    handleIntent(event.data);
+                    break;
+
+                case 'retrieval':
+                    handleRetrieval(event.data);
+                    break;
+
+                case 'chunk':
+                    handleChunk(event.data);
+                    break;
+
+                case 'error':
+                    handleError(event.data);
+                    break;
+
+                case 'complete':
+                    handleComplete(event.data);
+                    break;
+            }
+        }
+
+        function handleStatus(data) {
+            const statusMessages = {
+                'thinking': '🤔 Thinking...',
+                'classifying': '🎯 Understanding your request...',
+                'retrieving': '📚 Searching knowledge base...',
+                'generating': '✍️ Generating response...'
+            };
+
+            const message = statusMessages[data.status] || data.message;
+
+            // Update or create status indicator
+            if (currentStatusElement) {
+                currentStatusElement.querySelector('.status-text').textContent = message;
+            } else {
+                currentStatusElement = document.createElement('div');
+                currentStatusElement.className = 'status-indicator';
+                currentStatusElement.innerHTML = `
+                    <div class="spinner"></div>
+                    <span class="status-text">${message}</span>
+                `;
+                chatContainer.appendChild(currentStatusElement);
+                scrollToBottom();
+            }
+        }
+
+        function handleIntent(data) {
+            currentMetadata.intent = data.intent;
+            currentMetadata.confidence = data.confidence;
+
+            // Remove status indicator
+            if (currentStatusElement) {
+                currentStatusElement.remove();
+                currentStatusElement = null;
+            }
+
+            // Create assistant message with intent badge
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant';
+            messageDiv.innerHTML = `
+                <div class="intent-badge ${data.intent}">${data.intent.replace('_', ' ')} (${(data.confidence * 100).toFixed(0)}%)</div>
+                <div class="message-content"></div>
+            `;
+            chatContainer.appendChild(messageDiv);
+            currentMessageElement = messageDiv.querySelector('.message-content');
+            scrollToBottom();
+        }
+
+        function handleRetrieval(data) {
+            currentMetadata.chunks_retrieved = data.chunks_retrieved;
+        }
+
+        function handleChunk(data) {
+            if (!currentMessageElement) {
+                // Create message element if it doesn't exist yet
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message assistant';
+                messageDiv.innerHTML = '<div class="message-content"></div>';
+                chatContainer.appendChild(messageDiv);
+                currentMessageElement = messageDiv.querySelector('.message-content');
+            }
+
+            // Append chunk
+            currentMessageElement.textContent += data.chunk;
+            scrollToBottom();
+        }
+
+        function handleError(data) {
+            showError(data.error);
+
+            // Remove status indicator
+            if (currentStatusElement) {
+                currentStatusElement.remove();
+                currentStatusElement = null;
+            }
+        }
+
+        function handleComplete(data) {
+            // Remove status indicator
+            if (currentStatusElement) {
+                currentStatusElement.remove();
+                currentStatusElement = null;
+            }
+
+            // Add metadata
+            if (currentMessageElement && data.metadata) {
+                const parentDiv = currentMessageElement.parentElement;
+                const metadataDiv = document.createElement('div');
+                metadataDiv.className = 'metadata';
+
+                const items = [];
+                if (data.metadata.processing_time) {
+                    items.push(`⏱️ ${data.metadata.processing_time}`);
+                }
+                if (data.metadata.citations_count > 0) {
+                    items.push(`📚 ${data.metadata.citations_count} citations`);
+                }
+                if (data.metadata.response_length) {
+                    items.push(`📝 ${data.metadata.response_length} chars`);
+                }
+
+                metadataDiv.innerHTML = items.map(item =>
+                    `<div class="metadata-item">${item}</div>`
+                ).join('');
+
+                parentDiv.appendChild(metadataDiv);
+            }
+
+            // Reset state
+            currentMessageElement = null;
+            handleStreamComplete();
+        }
+
+        function handleStreamComplete() {
+            isStreaming = false;
+            sendButton.disabled = false;
+            messageInput.focus();
+        }
+
+        // ====================================================================
+        // UI HELPERS
+        // ====================================================================
+
+        function addUserMessage(message) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message user';
+            messageDiv.innerHTML = `<div class="message-content">${escapeHtml(message)}</div>`;
+            chatContainer.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function showError(errorMessage) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = `❌ ${errorMessage}`;
+            chatContainer.appendChild(errorDiv);
+            scrollToBottom();
+
+            // Remove error after 5 seconds
+            setTimeout(() => errorDiv.remove(), 5000);
+        }
+
+        function scrollToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ====================================================================
+        // INITIALIZATION
+        // ====================================================================
+
+        console.log('TRIA AI-BPO Streaming Chat initialized');
+        console.log('API Base URL:', API_BASE_URL);
+        console.log('Stream Endpoint:', STREAM_ENDPOINT);
+
+        // Focus input on load
+        messageInput.focus();
+    </script>
+</body>
+</html>

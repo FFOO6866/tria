@@ -1,0 +1,46 @@
+# ==========================================================================
+# Tria AI-BPO Terraform Variables Example
+# Copy this file to terraform.tfvars and fill in your values
+# ==========================================================================
+
+# General Configuration
+aws_region   = "us-east-1"
+environment  = "staging"  # or "production"
+project_name = "tria-aibpo"
+
+# Networking
+vpc_cidr = "10.0.0.0/16"
+
+# Database Configuration
+db_username = "tria_admin"
+db_password = "CHANGE_THIS_SECURE_PASSWORD_123!"  # Min 12 characters
+
+# RDS Instance Class
+# Staging: db.t4g.micro (free tier eligible)
+# Production: db.t4g.small or db.t4g.medium
+rds_instance_class = "db.t4g.micro"
+
+# Redis Configuration
+redis_node_type = "cache.t4g.micro"  # Free tier eligible
+redis_auth_token = ""  # Optional: leave empty to disable auth
+
+# ECS Configuration
+ecs_task_cpu    = "512"   # 0.5 vCPU
+ecs_task_memory = "1024"  # 1 GB
+
+# Service Scaling
+ecs_service_desired_count = 2
+ecs_autoscaling_min      = 1
+ecs_autoscaling_max      = 10
+
+# Application Secrets (Stored in AWS Secrets Manager)
+# These will be referenced in the task definition
+openai_api_key = "sk-your-openai-api-key-here"
+secret_key     = "your-32-character-secret-key-here-change-this"  # Min 32 characters
+
+# Additional Tags (Optional)
+additional_tags = {
+  Owner       = "DevOps Team"
+  CostCenter  = "Engineering"
+  Compliance  = "PDPA"
+}

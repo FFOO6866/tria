@@ -1,0 +1,277 @@
+# Prometheus Alerting Rules for TRIA AI-BPO
+# ============================================
+#
+# Defines alert conditions and severity levels.
+# Alerts are sent to Alertmanager, which routes to PagerDuty/Slack/Email.
+
+groups:
+  # API Performance Alerts
+  - name: api_performance
+    interval: 30s
+    rules:
+      # Critical: High P95 Latency
+      - alert: HighP95Latency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "High P95 latency detected"
+          description: "P95 latency is {{ $value }}s (threshold: 5s) for the past 5 minutes"
+          runbook: "https://docs.tria.com/runbooks/high-latency"
+
+      # Critical: High P99 Latency
+      - alert: HighP99Latency
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "High P99 latency detected"
+          description: "P99 latency is {{ $value }}s (threshold: 10s)"
+
+      # Warning: Elevated Mean Latency
+      - alert: ElevatedMeanLatency
+        expr: rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m]) > 3
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Elevated mean latency"
+          description: "Mean latency is {{ $value }}s (threshold: 3s)"
+
+  # Error Rate Alerts
+  - name: error_rates
+    interval: 30s
+    rules:
+      # Critical: High Error Rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "High 5xx error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 1%)"
+          runbook: "https://docs.tria.com/runbooks/high-error-rate"
+
+      # Warning: Elevated 4xx Rate
+      - alert: High4xxRate
+        expr: rate(http_requests_total{status=~"4.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High 4xx error rate"
+          description: "4xx rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+  # Cache Performance Alerts
+  - name: cache_performance
+    interval: 60s
+    rules:
+      # Warning: Low Cache Hit Rate
+      - alert: LowCacheHitRate
+        expr: rate(cache_hits_total[10m]) / rate(cache_requests_total[10m]) < 0.5
+        for: 15m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} (threshold: 50%)"
+          action: "Check if cache is properly configured and Redis is healthy"
+
+      # Critical: Cache Unavailable
+      - alert: CacheUnavailable
+        expr: up{job="redis"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis cache is unavailable"
+          description: "Redis has been down for 2+ minutes"
+          runbook: "https://docs.tria.com/runbooks/redis-down"
+
+  # Database Alerts
+  - name: database
+    interval: 60s
+    rules:
+      # Critical: Database Down
+      - alert: DatabaseDown
+        expr: up{job="postgresql"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "Database has been unreachable for 1+ minute"
+          runbook: "https://docs.tria.com/runbooks/database-down"
+
+      # Critical: Connection Pool Exhaustion
+      - alert: ConnectionPoolExhausted
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database connection pool near exhaustion"
+          description: "{{ $value | humanizePercentage }} of connections in use (threshold: 90%)"
+          action: "Check for connection leaks or increase pool size"
+
+      # Warning: Slow Queries
+      - alert: SlowQueries
+        expr: rate(pg_stat_statements_mean_exec_time[5m]) > 1000
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "Mean query time is {{ $value }}ms (threshold: 1000ms)"
+
+  # Resource Utilization Alerts
+  - name: resources
+    interval: 60s
+    rules:
+      # Critical: High Memory Usage
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }} (threshold: 90%)"
+          action: "Check for memory leaks or scale up memory"
+
+      # Warning: High CPU Usage
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% (threshold: 80%)"
+
+      # Critical: Disk Space Low
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Disk space running low"
+          description: "Only {{ $value | humanizePercentage }} disk space remaining (threshold: 10%)"
+          action: "Clean up logs or expand disk"
+
+  # API Availability Alerts
+  - name: availability
+    interval: 30s
+    rules:
+      # Critical: API Down
+      - alert: APIDown
+        expr: up{job="tria-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "TRIA API is down"
+          description: "API has been unreachable for 2+ minutes"
+          runbook: "https://docs.tria.com/runbooks/api-down"
+          pager: "true"  # Page on-call
+
+      # Warning: Health Check Failing
+      - alert: HealthCheckFailing
+        expr: probe_success{job="tria-backend"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Health check endpoint failing"
+          description: "Health check has been failing for 5+ minutes"
+
+  # Cost & Usage Alerts
+  - name: cost_monitoring
+    interval: 300s  # Check every 5 minutes
+    rules:
+      # Warning: High API Cost
+      - alert: HighOpenAICost
+        expr: increase(openai_api_cost_usd[1h]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: cost
+        annotations:
+          summary: "High OpenAI API cost"
+          description: "OpenAI costs exceeded $10/hour ({{ $value }} USD)"
+          action: "Check for unusual usage patterns or cache effectiveness"
+
+      # Critical: Very High API Cost
+      - alert: VeryHighOpenAICost
+        expr: increase(openai_api_cost_usd[1h]) > 50
+        for: 5m
+        labels:
+          severity: critical
+          component: cost
+        annotations:
+          summary: "CRITICAL: Very high OpenAI API cost"
+          description: "OpenAI costs exceeded $50/hour ({{ $value }} USD)"
+          action: "Immediate investigation required - possible abuse or runaway queries"
+
+  # OpenAI Rate Limiting Alerts
+  - name: openai_rate_limits
+    interval: 60s
+    rules:
+      # Warning: Approaching Rate Limit
+      - alert: ApproachingOpenAIRateLimit
+        expr: rate(openai_rate_limit_errors_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: openai
+        annotations:
+          summary: "Approaching OpenAI rate limits"
+          description: "Rate limit errors detected: {{ $value }}/s"
+          action: "Implement request throttling or upgrade tier"
+
+  # Xero Integration Alerts
+  - name: xero_integration
+    interval: 60s
+    rules:
+      # Critical: Xero API Down
+      - alert: XeroAPIFailures
+        expr: rate(xero_api_errors_total[10m]) / rate(xero_api_requests_total[10m]) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+          component: xero
+        annotations:
+          summary: "High Xero API error rate"
+          description: "Xero API error rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+          runbook: "https://docs.tria.com/runbooks/xero-failures"
+
+      # Warning: Xero Rate Limiting
+      - alert: XeroRateLimiting
+        expr: rate(xero_rate_limit_errors_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: xero
+        annotations:
+          summary: "Xero rate limit errors"
+          description: "Xero rate limit hit: {{ $value }} errors/s"
+          action: "Reduce request rate or implement backoff"

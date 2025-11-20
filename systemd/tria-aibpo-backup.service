@@ -1,0 +1,59 @@
+# Tria AIBPO backup service
+# Automated backup of database and application data
+#
+# Installation:
+#   sudo cp systemd/tria-aibpo-backup.* /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable tria-aibpo-backup.timer
+#   sudo systemctl start tria-aibpo-backup.timer
+#
+# Manual backup:
+#   sudo systemctl start tria-aibpo-backup.service
+#
+# View logs:
+#   sudo journalctl -u tria-aibpo-backup -f
+
+[Unit]
+Description=Tria AIBPO Database and Data Backup
+Documentation=https://github.com/yourusername/tria-aibpo
+After=tria-aibpo.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+
+# Backup directory
+Environment="BACKUP_DIR=/opt/tria-aibpo/backups"
+Environment="APP_DIR=/opt/tria-aibpo"
+
+# Create backup script inline
+ExecStartPre=/bin/bash -c 'mkdir -p ${BACKUP_DIR}'
+
+# Backup PostgreSQL database
+ExecStart=/bin/bash -c '\
+    TIMESTAMP=$(date +%%Y%%m%%d_%%H%%M%%S) && \
+    cd ${APP_DIR} && \
+    docker compose --env-file .env exec -T postgres pg_dump -U tria_admin tria_aibpo | gzip > ${BACKUP_DIR}/postgres_${TIMESTAMP}.sql.gz && \
+    echo "PostgreSQL backup created: postgres_${TIMESTAMP}.sql.gz"'
+
+# Backup application data (logs, chromadb, etc.)
+ExecStartPost=/bin/bash -c '\
+    TIMESTAMP=$(date +%%Y%%m%%d_%%H%%M%%S) && \
+    cd ${APP_DIR} && \
+    tar -czf ${BACKUP_DIR}/data_${TIMESTAMP}.tar.gz data/ logs/ .env && \
+    echo "Application data backup created: data_${TIMESTAMP}.tar.gz"'
+
+# Cleanup old backups (keep last 7 days)
+ExecStartPost=/bin/bash -c 'find ${BACKUP_DIR} -name "*.sql.gz" -mtime +7 -delete'
+ExecStartPost=/bin/bash -c 'find ${BACKUP_DIR} -name "*.tar.gz" -mtime +7 -delete'
+
+# Notifications on failure (optional - requires mail setup)
+# OnFailure=failure-notification@%n.service
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,123 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.DS_Store
+
+# Environment files (should be provided at runtime)
+.env
+.env.local
+.env.*.local
+
+# Documentation
+*.md
+docs/
+README*
+LICENSE
+
+# Tests
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Logs (will be created at runtime)
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Database files (should use external database in production)
+*.db
+*.sqlite
+*.sqlite3
+
+# Large data files (should use volumes/external storage)
+# ChromaDB vector database (782MB - use volume mount instead)
+data/chromadb/
+data/chromadb_test/
+data/chromadb_cache/*
+!data/chromadb_cache/.gitkeep
+
+# Performance and evaluation data (not needed in container)
+data/performance_benchmark.json
+data/policy_usage.jsonl
+data/policy_usage_report.json
+data/eval/
+
+# Large assets (use volume mount for inventory)
+data/inventory/*.xlsx
+data/logo.png
+
+# Generated files (created at runtime)
+data/generated/
+data/dspy_models/
+data/dspy_cache/
+
+# Node modules (if any)
+node_modules/
+
+# Kubernetes manifests
+k8s/
+kubernetes/
+infrastructure/
+
+# Cloud provider specific
+.aws/
+.gcp/
+.azure/
+
+# Terraform
+terraform/
+*.tfstate
+*.tfstate.backup
+.terraform/
