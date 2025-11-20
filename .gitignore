@@ -114,3 +114,9 @@ data/chromadb_cache/
 docs/build_output.txt
 
 # Prevent root-level data files (already covered above)
+
+# Deployment sensitive files
+*.pem
+*.key
+.env.server
+deployment_outputs.txt

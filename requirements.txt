@@ -6,11 +6,12 @@
 # This file installs Kailash and its dependencies, plus additional packages for the POV.
 
 # Core Kailash SDK (will install its own dependencies including pytest, black, numpy, etc.)
-kailash[nexus,dataflow]
+kailash
 
 # Additional Data Processing (beyond Kailash dependencies)
 pandas>=2.0.0
 openpyxl>=3.1.0
+python-docx>=0.8.11  # For document processing in RAG
 
 # Database (PostgreSQL for DataFlow)
 psycopg2-binary>=2.9.9
