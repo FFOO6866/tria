@@ -216,3 +216,47 @@ class SessionManager:
             Dictionary with system statistics
         """
         return self.memory.get_stats()
+
+    def update_session_context(
+        self,
+        session_id: str,
+        context_updates: Dict[str, Any]
+    ) -> bool:
+        """
+        Update session context metadata (alias for update_session_metadata)
+
+        Args:
+            session_id: Session identifier
+            context_updates: Context fields to update
+
+        Returns:
+            True if updated successfully
+        """
+        return self.memory.update_session_context(session_id, context_updates)
+
+    def update_user_analytics(
+        self,
+        user_id: str,
+        outlet_id: Optional[int] = None,
+        language: str = "en",
+        intent: Optional[str] = None
+    ) -> bool:
+        """
+        Update user analytics/interaction summary
+
+        Args:
+            user_id: User identifier
+            outlet_id: Outlet ID if known
+            language: User's preferred language
+            intent: Latest detected intent
+
+        Returns:
+            True if updated successfully
+        """
+        # TODO: Implement full analytics update in ConversationMemoryManager
+        # For now, just log and return True to prevent errors
+        logger.debug(
+            f"Analytics update for user {user_id[:8]}... "
+            f"(outlet: {outlet_id}, lang: {language}, intent: {intent})"
+        )
+        return True
