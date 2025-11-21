@@ -221,9 +221,18 @@ def create_tables(engine):
 
     Note:
         This is idempotent - safe to call multiple times.
-        Uses IF NOT EXISTS internally.
+        Uses IF NOT EXISTS internally for tables.
+        Handles duplicate index errors gracefully.
     """
-    Base.metadata.create_all(engine)
+    from sqlalchemy.exc import ProgrammingError
+    try:
+        Base.metadata.create_all(engine)
+    except ProgrammingError as e:
+        # Ignore "relation already exists" errors for indexes
+        if 'already exists' in str(e):
+            pass
+        else:
+            raise
 
 
 def drop_tables(engine):
