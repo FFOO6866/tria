@@ -516,7 +516,6 @@ async def health_check():
 
     # Include existing component status
     health_status["components"] = {
-        "runtime": "initialized" if runtime else "not_initialized",
         "session_manager": "initialized" if session_manager else "not_initialized",
         "chatbot": {
             "intent_classifier": "initialized" if intent_classifier else "not_initialized",
