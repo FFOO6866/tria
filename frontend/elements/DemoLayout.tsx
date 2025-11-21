@@ -4,7 +4,7 @@ import { useState } from 'react';
 import OrderInputPanel from './OrderInputPanel';
 import AgentActivityPanel from './AgentActivityPanel';
 import OutputsPanel from './OutputsPanel';
-import { OrderResult, AgentStatus } from './types';
+import { OrderResult, AgentStatus, AgentId } from './types';
 import { processOrder, ProcessOrderRequest } from './api-client';
 
 export default function DemoLayout() {
@@ -50,7 +50,7 @@ export default function DemoLayout() {
     });
 
     // Fill in any missing agents as idle
-    const allAgentIds = ['customer-service', 'orchestrator', 'finance', 'inventory', 'delivery'];
+    const allAgentIds: AgentId[] = ['customer-service', 'orchestrator', 'finance', 'inventory', 'delivery'];
     const processedIds = new Set(updatedAgents.map(a => a.id));
 
     allAgentIds.forEach(id => {
@@ -64,7 +64,7 @@ export default function DemoLayout() {
         };
 
         updatedAgents.push({
-          id: id as any,
+          id: id,
           name: agentNames[id],
           status: 'idle',
           progress: 0,
@@ -74,7 +74,7 @@ export default function DemoLayout() {
     });
 
     // Sort by agent order
-    const agentOrder = ['customer-service', 'orchestrator', 'finance', 'inventory', 'delivery'];
+    const agentOrder: AgentId[] = ['customer-service', 'orchestrator', 'finance', 'inventory', 'delivery'];
     updatedAgents.sort((a, b) => agentOrder.indexOf(a.id) - agentOrder.indexOf(b.id));
 
     setAgentStatuses(updatedAgents);
