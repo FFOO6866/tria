@@ -85,22 +85,25 @@ export default function AgentCard({ agent }: AgentCardProps) {
       {/* Details List - Real Data from Backend */}
       {agent.details && agent.details.length > 0 && (
         <div className="space-y-1.5">
-          {agent.details.map((detail, idx) => (
-            <div
-              key={idx}
-              className="flex items-start gap-2 text-xs text-slate-700 animate-in fade-in slide-in-from-left-2 duration-300"
-              style={{ animationDelay: `${idx * 100}ms` }}
-            >
-              <span className="text-slate-400 mt-0.5">•</span>
-              <span className="flex-1">{detail}</span>
-              {idx === agent.details.length - 1 && isActive && (
-                <Loader2 className="w-3 h-3 text-current animate-spin flex-shrink-0 mt-0.5" />
-              )}
-              {idx < agent.details.length - 1 && isCompleted && (
-                <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0 mt-0.5" />
-              )}
-            </div>
-          ))}
+          {agent.details.map((detail, idx) => {
+            const detailsLength = agent.details?.length ?? 0;
+            return (
+              <div
+                key={idx}
+                className="flex items-start gap-2 text-xs text-slate-700 animate-in fade-in slide-in-from-left-2 duration-300"
+                style={{ animationDelay: `${idx * 100}ms` }}
+              >
+                <span className="text-slate-400 mt-0.5">•</span>
+                <span className="flex-1">{detail}</span>
+                {idx === detailsLength - 1 && isActive && (
+                  <Loader2 className="w-3 h-3 text-current animate-spin flex-shrink-0 mt-0.5" />
+                )}
+                {idx < detailsLength - 1 && isCompleted && (
+                  <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0 mt-0.5" />
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
