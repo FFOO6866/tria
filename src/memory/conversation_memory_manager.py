@@ -107,12 +107,14 @@ class ConversationMemoryManager:
         """
         db: Session = self.SessionLocal()
         try:
-            # Create session record
+            # Create session record with explicit timestamps
+            now = datetime.utcnow()
             session = ConversationSession(
                 session_id=str(uuid.uuid4()),
                 user_id=user_id,
                 outlet_id=outlet_id,
                 language=language,
+                start_time=now,  # Explicit to avoid NOT NULL constraint issues
                 intents={
                     "primary": initial_intent,
                     "confidence": intent_confidence
