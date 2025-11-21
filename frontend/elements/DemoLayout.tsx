@@ -168,7 +168,7 @@ export default function DemoLayout() {
       });
 
       // Fill in any missing agents as idle
-      const allAgentIds = ['customer-service', 'orchestrator', 'inventory', 'delivery', 'finance'];
+      const allAgentIds: AgentId[] = ['customer-service', 'orchestrator', 'inventory', 'delivery', 'finance'];
       const processedIds = new Set(updatedAgents.map(a => a.id));
 
       allAgentIds.forEach(id => {
@@ -182,7 +182,7 @@ export default function DemoLayout() {
           };
 
           updatedAgents.push({
-            id: id as any,
+            id: id,
             name: agentNames[id],
             status: 'idle',
             progress: 0,
@@ -192,7 +192,7 @@ export default function DemoLayout() {
       });
 
       // Sort by agent order
-      const agentOrder = ['customer-service', 'orchestrator', 'inventory', 'delivery', 'finance'];
+      const agentOrder: AgentId[] = ['customer-service', 'orchestrator', 'inventory', 'delivery', 'finance'];
       updatedAgents.sort((a, b) => agentOrder.indexOf(a.id) - agentOrder.indexOf(b.id));
 
       setAgentStatuses(updatedAgents);
