@@ -269,7 +269,7 @@ export default function OrderInputPanel({
         </div>
         <div className="flex items-center gap-4">
           {mode === 'chatbot' && (
-            <Globe className="w-5 h-5 cursor-pointer opacity-80 hover:opacity-100" title="Multi-language support" />
+            <Globe className="w-5 h-5 cursor-pointer opacity-80 hover:opacity-100" aria-label="Multi-language support" />
           )}
           <Video className="w-5 h-5 cursor-pointer opacity-80 hover:opacity-100" />
           <Phone className="w-5 h-5 cursor-pointer opacity-80 hover:opacity-100" />
