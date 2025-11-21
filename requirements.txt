@@ -49,3 +49,4 @@ ratelimit>=2.2.1  # Rate limiting for API calls
 
 # Additional Production Requirements
 python-json-logger>=2.0.0  # Structured logging for production
+psutil>=5.9.0  # System and process monitoring
