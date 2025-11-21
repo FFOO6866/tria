@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, ReactElement } from 'react';
 import { Check, CheckCheck, AlertCircle, Info, FileText } from 'lucide-react';
 import type { ConversationalMessage, RAGCitation, LanguageCode } from './types';
 
@@ -59,7 +59,7 @@ export default function ConversationPanel({
   };
 
   // Message type icons
-  const messageTypeIcons: Record<string, JSX.Element> = {
+  const messageTypeIcons: Record<string, ReactElement> = {
     order_confirmation: <Check className="w-4 h-4 text-green-600" />,
     error: <AlertCircle className="w-4 h-4 text-red-600" />,
     system: <Info className="w-4 h-4 text-blue-600" />,
