@@ -90,7 +90,7 @@ export async function healthCheck(): Promise<{ status: string; database: string;
 /**
  * Download Delivery Order as Excel file
  */
-export async function downloadDeliveryOrder(orderId: number): Promise<void> {
+export async function downloadDeliveryOrder(orderId: string | number): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/download_do/${orderId}`);
 
   if (!response.ok) {
@@ -123,7 +123,7 @@ export async function downloadDeliveryOrder(orderId: number): Promise<void> {
 /**
  * Download Invoice as PDF file
  */
-export async function downloadInvoice(orderId: number): Promise<void> {
+export async function downloadInvoice(orderId: string | number): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/download_invoice/${orderId}`);
 
   if (!response.ok) {
@@ -156,7 +156,7 @@ export async function downloadInvoice(orderId: number): Promise<void> {
 /**
  * Post invoice to Xero
  */
-export async function postToXero(orderId: number): Promise<{
+export async function postToXero(orderId: string | number): Promise<{
   success: boolean;
   message: string;
   details?: any;
