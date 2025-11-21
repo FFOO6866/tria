@@ -51,3 +51,6 @@ ratelimit>=2.2.1  # Rate limiting for API calls
 python-json-logger>=2.0.0  # Structured logging for production
 psutil>=5.9.0  # System and process monitoring
 prometheus-client>=0.16.0  # Prometheus metrics collection
+
+# PDF Generation
+reportlab>=4.0.0  # PDF generation for invoices and reports
