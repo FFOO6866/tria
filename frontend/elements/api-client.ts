@@ -215,6 +215,7 @@ export async function sendChatbotMessage(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Idempotency-Key': crypto.randomUUID(),
     },
     body: JSON.stringify(request),
   });
