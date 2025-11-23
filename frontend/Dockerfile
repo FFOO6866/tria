@@ -18,8 +18,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Set environment variable for API URL (will be overridden by docker-compose)
-ENV NEXT_PUBLIC_API_URL=http://backend:8001
+# Use empty API URL so browser makes relative requests through nginx
+# This allows the frontend to work when accessed via public IP/domain
+ENV NEXT_PUBLIC_API_URL=
 
 # Build Next.js application
 RUN npm run build

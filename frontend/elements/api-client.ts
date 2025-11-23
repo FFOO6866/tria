@@ -1,10 +1,13 @@
 /**
  * API Client for TRIA AI-BPO Backend
  *
- * Connects to FastAPI server at http://localhost:8001 (enhanced_api.py)
+ * In production: Uses relative paths through nginx (NEXT_PUBLIC_API_URL='')
+ * In development: Connects to http://localhost:8001 (enhanced_api.py)
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL !== undefined
+  ? process.env.NEXT_PUBLIC_API_URL
+  : 'http://localhost:8001';
 
 export interface ProcessOrderRequest {
   whatsapp_message: string;
