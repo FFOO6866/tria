@@ -281,6 +281,14 @@ async def startup_event():
         print(f"     - Intent TTL: 1 hour")
         print(f"     - Policy TTL: 24 hours")
         print(f"     - Expected: 5x faster, 80% cost reduction")
+
+        # CRITICAL WARNING: In-memory fallback loses cache on restart
+        if chat_cache.redis_cache.using_fallback:
+            print(f"[WARNING] ⚠️  Redis not available - using in-memory fallback!")
+            print(f"         Cache will be LOST on server restart.")
+            print(f"         For production, ensure Redis is running:")
+            print(f"           docker run -d --name redis -p 6379:6379 redis:alpine")
+            print(f"         Or set REDIS_HOST, REDIS_PORT environment variables.")
     except Exception as e:
         print(f"[WARNING] Failed to initialize chat cache: {e}")
         print("         Chat response caching disabled")
@@ -774,13 +782,41 @@ async def chatbot_endpoint(request: ChatbotRequest):
                     openai_key = config.OPENAI_API_KEY
 
                     logger.info(f"[AGENT 1] Customer Service - Running semantic search...")
-                    relevant_products = semantic_product_search(
-                        message=request.message,
-                        database_url=database_url,
-                        api_key=openai_key,
-                        top_n=10,
-                        min_similarity=0.3
-                    )
+                    try:
+                        relevant_products = semantic_product_search(
+                            message=request.message,
+                            database_url=database_url,
+                            api_key=openai_key,
+                            top_n=10,
+                            min_similarity=0.3
+                        )
+                    except RuntimeError as embed_error:
+                        # Fallback: Load all products if embeddings not available
+                        logger.warning(f"[AGENT 1] Semantic search failed (embeddings not available), falling back to all products: {embed_error}")
+                        from database import get_db_engine
+                        from sqlalchemy import text
+
+                        engine = get_db_engine(database_url)
+                        with engine.connect() as conn:
+                            result = conn.execute(text("""
+                                SELECT sku, description, unit_price, uom, category, stock_quantity
+                                FROM products
+                                WHERE is_active = :is_active
+                                ORDER BY category, sku
+                            """), {"is_active": True})
+
+                            relevant_products = []
+                            for row in result:
+                                relevant_products.append({
+                                    'sku': row.sku,
+                                    'description': row.description,
+                                    'unit_price': float(row.unit_price) if row.unit_price else 0.0,
+                                    'uom': row.uom or 'pieces',
+                                    'category': row.category or '',
+                                    'stock_quantity': row.stock_quantity or 0
+                                })
+
+                        logger.info(f"[AGENT 1] Loaded {len(relevant_products)} products from database (fallback mode)")
 
                     if len(relevant_products) == 0:
                         raise ValueError("No products matched your order description")
@@ -1509,7 +1545,7 @@ Return a JSON object with:
                     context={"error": str(e)},
                     enable_pii_scrubbing=False
                 )
-            except:
+            except Exception:
                 pass  # Don't fail on logging failure
 
         # Return customer-friendly error (NO technical details!)
@@ -2831,6 +2867,156 @@ async def post_invoice_to_xero(order_id: int):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/generated-outputs")
+async def get_generated_outputs(
+    category: Optional[str] = None,
+    date: Optional[str] = None,
+    status: Optional[str] = None,
+    group_by: Optional[str] = None
+):
+    """
+    Get generated outputs from agent operations with filtering and grouping.
+
+    This endpoint provides detailed outputs showing what each agent did:
+    - Draft Delivery Orders prepared with details (store, quantity, delivery date)
+    - Invoices generated with line-item breakdown
+    - Inventory withdrawals for clients with current stock levels
+    - All operations grouped by day or functionality
+
+    Query Parameters:
+        category (optional): Filter by functionality
+            - "inventory": Inventory operations and stock movements
+            - "delivery": Delivery order creation and coordination
+            - "finance": Invoice generation and posting
+            - "orders": Order processing and orchestration
+            - "general": General operations
+
+        date (optional): Filter by date (YYYY-MM-DD format)
+            Example: date=2025-01-15
+
+        status (optional): Filter by status
+            - "idle": Not yet started
+            - "processing": Currently in progress
+            - "completed": Successfully finished
+            - "error": Failed or encountered issues
+
+        group_by (optional): Group results
+            - "date": Group by date for daily summaries
+            - "category": Group by functionality
+            - "summary": Get comprehensive summary with all groupings
+
+    Returns:
+        Filtered/grouped agent timeline with detailed outputs
+
+    Example Requests:
+        GET /api/v1/generated-outputs
+            → All operations with full details
+
+        GET /api/v1/generated-outputs?category=inventory
+            → All inventory operations (stock checks, withdrawals)
+
+        GET /api/v1/generated-outputs?date=2025-01-15
+            → All operations from January 15, 2025
+
+        GET /api/v1/generated-outputs?category=finance&status=completed
+            → All completed finance operations (invoices posted)
+
+        GET /api/v1/generated-outputs?group_by=date
+            → Operations grouped by date for daily reports
+
+        GET /api/v1/generated-outputs?group_by=summary
+            → Comprehensive summary with documents, inventory movements, etc.
+
+    Example Response (summary mode):
+        {
+            "summary": {
+                "total_operations": 5,
+                "by_category": {
+                    "inventory": 1,
+                    "delivery": 1,
+                    "finance": 1
+                },
+                "documents_generated": {
+                    "delivery_orders": [
+                        {
+                            "do_number": "DO-Store1-20250115-143022",
+                            "customer": "Store 1",
+                            "total_amount": 1500.00,
+                            "total_quantity": 50,
+                            "date": "2025-01-15T14:30:22"
+                        }
+                    ],
+                    "invoices": [
+                        {
+                            "invoice_number": "INV-2025-001",
+                            "customer": "Store 1",
+                            "total_amount": 1575.00,
+                            "tax_amount": 75.00,
+                            "date": "2025-01-15T14:31:15"
+                        }
+                    ]
+                }
+            },
+            "inventory_movements": [
+                {
+                    "product": "Product A",
+                    "sku": "PROD-001",
+                    "before": 100,
+                    "withdrawn": 10,
+                    "after": 90,
+                    "date": "2025-01-15T14:30:22"
+                }
+            ],
+            "by_date": {...},
+            "by_category": {...}
+        }
+    """
+    try:
+        from integrations.xero_order_orchestrator import get_xero_orchestrator
+
+        orchestrator = get_xero_orchestrator()
+
+        # If requesting summary view
+        if group_by == "summary":
+            return orchestrator.get_generated_outputs_summary()
+
+        # If requesting grouping
+        if group_by == "date":
+            return {
+                "grouped_by": "date",
+                "data": orchestrator.get_timeline_grouped_by_date()
+            }
+        elif group_by == "category":
+            return {
+                "grouped_by": "category",
+                "data": orchestrator.get_timeline_grouped_by_category()
+            }
+
+        # Otherwise, return filtered timeline
+        filtered_timeline = orchestrator.get_timeline_filtered(
+            category=category,
+            date=date,
+            status=status
+        )
+
+        return {
+            "total_results": len(filtered_timeline),
+            "filters_applied": {
+                "category": category,
+                "date": date,
+                "status": status
+            },
+            "data": filtered_timeline
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching generated outputs: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch generated outputs: {str(e)}"
+        )
 
 
 @app.get("/api/v1/metrics/cache")
