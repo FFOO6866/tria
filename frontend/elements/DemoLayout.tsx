@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import OrderInputPanel from './OrderInputPanel';
 import AgentActivityPanel from './AgentActivityPanel';
-import OutputsPanel from './OutputsPanel';
+import OutputsPanel from './OutputsPanel.enhanced';
 import { OrderResult, AgentStatus, AgentId } from './types';
 import { processOrder, ProcessOrderRequest } from './api-client';
 

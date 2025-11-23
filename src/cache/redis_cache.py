@@ -406,8 +406,8 @@ class RedisCache:
         if self.connection_pool:
             try:
                 self.connection_pool.disconnect()
-            except:
-                pass
+            except Exception:
+                pass  # Suppress cleanup errors during garbage collection
 
 
 # Global cache instance

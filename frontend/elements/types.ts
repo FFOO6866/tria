@@ -124,3 +124,78 @@ export interface LanguageInfo {
   name: string;
   flag: string;
 }
+
+// ============================================================
+// GENERATED OUTPUTS TYPES (Enhanced)
+// ============================================================
+
+export interface AgentOutputMetadata {
+  do_number?: string;
+  invoice_number?: string;
+  customer?: string;
+  customer_id?: string;
+  total_amount?: number;
+  total_quantity?: number;
+  subtotal?: number;
+  tax_amount?: number;
+  inventory_summary?: Array<{
+    sku: string;
+    product_name: string;
+    before: number;
+    requested: number;
+    after: number;
+    status: string;
+  }>;
+  line_items?: Array<{
+    item_code: string;
+    description: string;
+    quantity: number;
+    unit_price: number;
+  }>;
+}
+
+export interface AgentOutput {
+  agent_name: string;
+  category: 'inventory' | 'delivery' | 'finance' | 'orders' | 'general';
+  status: 'idle' | 'processing' | 'completed' | 'error';
+  current_task: string;
+  details: string[];
+  metadata?: AgentOutputMetadata;
+  date: string;
+  time: string;
+  started_at: string;
+  completed_at?: string;
+}
+
+export interface GeneratedOutputsSummary {
+  summary: {
+    total_operations: number;
+    by_category: Record<string, number>;
+    documents_generated: {
+      delivery_orders: Array<{
+        do_number: string;
+        customer: string;
+        total_amount: number;
+        total_quantity: number;
+        date: string;
+      }>;
+      invoices: Array<{
+        invoice_number: string;
+        customer: string;
+        total_amount: number;
+        tax_amount: number;
+        date: string;
+      }>;
+    };
+  };
+  inventory_movements: Array<{
+    product: string;
+    sku: string;
+    before: number;
+    withdrawn: number;
+    after: number;
+    date: string;
+  }>;
+  by_date: Record<string, AgentOutput[]>;
+  by_category: Record<string, AgentOutput[]>;
+}

@@ -1,0 +1,179 @@
+TRIA AI Agents-as-a-Service - 5 Year Financial Projections,,,,,,
+Last Updated: 2025-11-21,,,,,,
+,,,,,,
+===== PRICING STRUCTURE =====,,,,,,
+Tier,Monthly Price,Annual Price,Tasks/Month,Agents Included,Target Segment,
+Starter,$199,$2149 (10% disc),500,1,Solo/Micro,
+Growth,$499,$5389 (10% disc),2000,3,Small Business,
+Professional,$999,$10789 (10% disc),5000,5,Medium Business,
+Enterprise,$2499,$26989 (10% disc),15000,Unlimited,Larger SMB,
+,,,,,,
+Setup Fee (one-time),$500-$2000,,,,,
+Overage Rate,$0.05 per task,,,,,
+,,,,,,
+===== CUSTOMER ACQUISITION ASSUMPTIONS =====,,,,,,
+Metric,Year 1,Year 2,Year 3,Year 4,Year 5,Notes
+New Customers (Starter),15,30,50,70,90,Entry point - self-service signup
+New Customers (Growth),8,20,40,70,100,Upgrades + direct sales
+New Customers (Professional),2,8,20,40,60,Sales-led
+New Customers (Enterprise),0,2,5,10,15,Sales-led
+Total New Customers,25,60,115,190,265,
+Churn Rate (Annual),20%,18%,15%,12%,10%,Improves with product maturity
+Churned Customers,0,5,14,27,42,
+Net New Customers,25,55,101,163,223,
+End of Year Customers,25,75,176,339,562,
+,,,,,,
+===== CUSTOMER MIX (END OF YEAR) =====,,,,,,
+Tier,Year 1,Year 2,Year 3,Year 4,Year 5,
+Starter,15,35,65,100,140,
+Growth,8,28,68,138,248,
+Professional,2,10,35,81,144,
+Enterprise,0,2,8,20,30,
+Total,25,75,176,339,562,
+,,,,,,
+===== MONTHLY RECURRING REVENUE (MRR) =====,,,,,,
+Tier,Year 1,Year 2,Year 3,Year 4,Year 5,
+Starter MRR,$2985,$6965,$12935,$19900,$27860,
+Growth MRR,$3992,$13972,$33932,$68862,$123752,
+Professional MRR,$1998,$9990,$34965,$80919,$143856,
+Enterprise MRR,$0,$4998,$19992,$49980,$74970,
+Total MRR,$8975,$35925,$101824,$219661,$370438,
+,,,,,,
+===== ANNUAL REVENUE =====,,,,,,
+Revenue Type,Year 1,Year 2,Year 3,Year 4,Year 5,Notes
+Subscription Revenue,$107700,$431100,$1221888,$2635932,$4445256,MRR x 12
+Setup Fees,$25000,$48000,$80500,$133000,$185500,$800 avg per new customer
+Overage Revenue,$5000,$20000,$55000,$110000,$180000,~5% of subscription
+Total Revenue,$137700,$499100,$1357388,$2878932,$4810756,
+,,,,,,
+===== COST OF GOODS SOLD (COGS) =====,,,,,,
+Cost Category,Year 1,Year 2,Year 3,Year 4,Year 5,Notes
+Infrastructure (AWS),$15000,$35000,$75000,$140000,$220000,See infrastructure breakdown
+OpenAI API,$8000,$25000,$65000,$130000,$210000,$0.03 per task avg
+Third-party APIs,$3000,$8000,$18000,$35000,$55000,Xero/Twilio/SendGrid etc
+Total COGS,$26000,$68000,$158000,$305000,$485000,
+Gross Margin %,81%,86%,88%,89%,90%,
+,,,,,,
+===== OPERATING EXPENSES =====,,,,,,
+Expense Category,Year 1,Year 2,Year 3,Year 4,Year 5,Notes
+,,,,,,
+PERSONNEL,,,,,,
+Founders (2),$120000,$150000,$200000,$260000,$320000,Below market Y1-2 then normalize
+Engineers,,$0,$80000,$240000,$400000,1 in Y3 then 2 then 3
+Customer Success,,$0,$60000,$120000,$180000,1 in Y3 then 2 then 3
+Sales/Marketing,,$0,$0,$80000,$160000,1 in Y4 then 2
+Total Personnel,$120000,$150000,$340000,$700000,$1060000,
+,,,,,,
+OUTSOURCED SUPPORT,,,,,,
+L2 Support (Contractor),$12000,$24000,$48000,$84000,$120000,See support model below
+Technical Consulting,$6000,$12000,$18000,$24000,$30000,Specialist help as needed
+Total Outsourced,$18000,$36000,$66000,$108000,$150000,
+,,,,,,
+SALES & MARKETING,,,,,,
+Digital Marketing,$12000,$30000,$60000,$100000,$150000,SEO/PPC/Content
+Trade Shows/Events,$0,$5000,$15000,$30000,$50000,
+Sales Tools,$2000,$5000,$10000,$20000,$30000,CRM/Sales enablement
+Total S&M,$14000,$40000,$85000,$150000,$230000,
+,,,,,,
+GENERAL & ADMIN,,,,,,
+Software/Tools,$6000,$12000,$24000,$36000,$48000,Dev tools/productivity
+Legal/Accounting,$8000,$15000,$25000,$40000,$60000,
+Insurance,$3000,$5000,$8000,$12000,$18000,
+Office/Remote Stipend,$6000,$12000,$24000,$36000,$48000,
+Misc/Contingency,$5000,$10000,$20000,$35000,$50000,
+Total G&A,$28000,$54000,$101000,$159000,$224000,
+,,,,,,
+TOTAL OPERATING EXPENSES,$180000,$280000,$592000,$1117000,$1664000,
+,,,,,,
+===== PROFIT & LOSS SUMMARY =====,,,,,,
+Line Item,Year 1,Year 2,Year 3,Year 4,Year 5,
+Total Revenue,$137700,$499100,$1357388,$2878932,$4810756,
+COGS,$26000,$68000,$158000,$305000,$485000,
+Gross Profit,$111700,$431100,$1199388,$2573932,$4325756,
+Gross Margin %,81%,86%,88%,89%,90%,
+Operating Expenses,$180000,$280000,$592000,$1117000,$1664000,
+EBITDA,-$68300,$151100,$607388,$1456932,$2661756,
+EBITDA Margin %,-50%,30%,45%,51%,55%,
+,,,,,,
+Tax (25% if profitable),$0,$37775,$151847,$364233,$665439,
+Net Income,-$68300,$113325,$455541,$1092699,$1996317,
+,,,,,,
+===== CASH FLOW =====,,,,,,
+Item,Year 1,Year 2,Year 3,Year 4,Year 5,
+Starting Cash,$80000,$11700,$125025,$580566,$1673265,
+Net Income,-$68300,$113325,$455541,$1092699,$1996317,
+Ending Cash,$11700,$125025,$580566,$1673265,$3669582,
+,,,,,,
+===== KEY METRICS =====,,,,,,
+Metric,Year 1,Year 2,Year 3,Year 4,Year 5,Target
+ARR,$107700,$431100,$1221888,$2635932,$4445256,
+MRR (Dec),$8975,$35925,$101824,$219661,$370438,
+Customers (EOY),25,75,176,339,562,
+ARPU (Monthly),$359,$479,$579,$648,$659,$500+
+CAC (Est),$800,$900,$1000,$1100,$1200,
+LTV (Est),$7180,$10764,$15467,$21600,$26360,3yr value
+LTV:CAC Ratio,9.0,12.0,15.5,19.6,22.0,>3x
+Churn Rate,20%,18%,15%,12%,10%,<15%
+Revenue per Employee,$68850,$166367,$271478,$359867,$400896,
+Gross Margin,81%,86%,88%,89%,90%,>80%
+Team Size,2,3,5,8,12,
+,,,,,,
+===== OUTSOURCED SUPPORT MODEL =====,,,,,,
+Support Level,Provider,Cost Model,Year 1,Year 2,Year 3,Notes
+L1 (Self-Service),Knowledge Base + Chatbot,In-house,$0,$0,$0,Built into product
+L2 (Technical),Offshore Contractor,$15-25/hr,$12000,$24000,$48000,20-40 hrs/month scaling
+L3 (Engineering),Founders/Engineers,Internal,$0,$0,$0,Included in personnel
+Emergency (24/7),On-call Service,$500/mo base,$6000,$6000,$6000,Critical issues only
+Total Support Cost,,,$18000,$30000,$54000,
+,,,,,,
+Recommended Partners:,,,,,,
+- Upwork/Toptal,Technical contractors,$25-50/hr,,,For L2 support
+- Support Ninja,Managed support,$15-25/hr,,,Philippines-based
+- Helpscout,Ticketing system,$20-50/mo,,,Support platform
+,,,,,,
+===== INFRASTRUCTURE COST BREAKDOWN =====,,,,,,
+Component,Year 1,Year 2,Year 3,Year 4,Year 5,
+Central Platform,$1200,$1500,$2400,$3600,$6000,
+Staging Environment,$780,$780,$1200,$1800,$2400,
+Customer Instances,$6000,$18000,$45000,$90000,$150000,
+CI/CD + DevOps,$1200,$2400,$4800,$7200,$12000,
+Monitoring/Security,$1800,$3600,$7200,$12000,$18000,
+Backup/DR,$1200,$2400,$4800,$9600,$14400,
+CDN/Edge,$600,$1800,$4800,$9600,$12000,
+Buffer (20%),$2220,$5520,$14040,$26760,$43200,
+Total Infrastructure,$15000,$35000,$75000,$140000,$220000,
+,,,,,,
+===== HEADCOUNT PLAN =====,,,,,,
+Role,Year 1,Year 2,Year 3,Year 4,Year 5,
+Co-founder/CEO,1,1,1,1,1,
+Co-founder/CTO,1,1,1,1,1,
+Senior Engineer,0,0,1,2,3,
+Customer Success,0,0,1,2,3,
+Sales/BD,0,0,0,1,2,
+Marketing,0,0,0,0,1,
+Operations,0,0,0,0,1,
+Outsourced L2 Support,Contractor,Contractor,Contractor,Contractor,Contractor,
+Total FTE,2,2,4,7,12,
+Contractor FTE Equiv,0.5,1,1.5,2,2.5,
+,,,,,,
+===== MILESTONES =====,,,,,,
+Quarter,Milestone,Revenue Target,Customer Target,,
+Y1 Q1,MVP Launch + First 3 Customers,$5K MRR,5,,
+Y1 Q2,Product-Market Fit Validation,$7K MRR,12,,
+Y1 Q3,Self-Service Portal Live,$9K MRR,18,,
+Y1 Q4,First $100K ARR,$10K MRR,25,,
+Y2 Q2,Hire First Employee,$25K MRR,50,,
+Y2 Q4,Reach $500K ARR,$40K MRR,75,,
+Y3 Q2,Series A Ready (if desired),$75K MRR,130,,
+Y3 Q4,Reach $1M ARR,$100K MRR,175,,
+Y4 Q4,Reach $2.5M ARR,$220K MRR,340,,
+Y5 Q4,Reach $4M+ ARR,$370K MRR,560,,
+,,,,,,
+===== RISK FACTORS =====,,,,,,
+Risk,Probability,Impact,Mitigation,,,
+Slower customer acquisition,Medium,High,Conservative projections + longer runway,,,
+Higher churn than expected,Medium,High,Focus on onboarding + success,,,
+OpenAI price increases,Low,Medium,Multi-model support + caching,,,
+Competition from incumbents,Medium,Medium,Niche focus + superior UX,,,
+Technical debt,Medium,Low,AI-assisted refactoring,,,
+Key person risk,High,High,Documentation + knowledge sharing,,,

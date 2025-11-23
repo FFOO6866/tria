@@ -1,0 +1,91 @@
+TRIA AI Agents-as-a-Service - Pricing Model,,,,,,
+,,,,,,
+===== SUBSCRIPTION TIERS =====,,,,,,
+Tier,Monthly,Annual (10% off),Tasks/Month,Agents,Support Level,Target Customer
+Starter,$199,$2149,500,1,Self-service + Email,Solo operators / Micro business
+Growth,$499,$5389,2000,3,Email + Chat,Small business (2-10 employees)
+Professional,$999,$10789,5000,5,Priority Email + Chat + Phone,Medium business (10-50 employees)
+Enterprise,$2499,$26989,15000,Unlimited,Dedicated Success Manager,Larger SMB (50-200 employees)
+,,,,,,
+===== PRICING RATIONALE =====,,,,,,
+Factor,Calculation,Notes,,,
+Cost to serve (Starter),$45/mo,Infrastructure ($15) + OpenAI ($15) + Support allocation ($15),,,
+Cost to serve (Growth),$95/mo,Infrastructure ($25) + OpenAI ($40) + Support allocation ($30),,,
+Cost to serve (Professional),$180/mo,Infrastructure ($50) + OpenAI ($80) + Support allocation ($50),,,
+Cost to serve (Enterprise),$400/mo,Infrastructure ($100) + OpenAI ($200) + Support allocation ($100),,,
+Target Gross Margin,75-85%,,,,
+,,,,,,
+===== INCLUDED AGENTS =====,,,,,,
+Agent Type,Starter,Growth,Professional,Enterprise,Setup Complexity
+Order Processing,✓,✓,✓,✓,Medium
+Customer Service,-,✓,✓,✓,Low
+Data Entry,-,✓,✓,✓,Medium
+Reporting,-,-,✓,✓,Low
+Custom Workflows,-,-,-,✓,High
+,,,,,,
+===== ADD-ONS & OVERAGES =====,,,,,,
+Item,Price,Unit,Notes,,
+Additional Tasks,$0.05,per task,Over monthly limit,,
+Additional Agent,$99,per month,Beyond tier limit,,
+Premium Integration,$199,per month,SAP/Salesforce/NetSuite,,
+Custom Agent Build,$2000-5000,one-time,Bespoke agent development,,
+Priority Support Upgrade,$199,per month,For Starter/Growth tiers,,
+Data Retention (Extended),$49,per month,90 days → 1 year,,
+,,,,,,
+===== ONE-TIME FEES =====,,,,,,
+Service,Price,Included In,Notes,,
+Self-Service Setup,$0,All tiers,DIY onboarding,,
+Guided Setup,$499,Growth+,1-hour onboarding call,,
+Full Setup,$999,Professional+,Complete configuration,,
+Enterprise Onboarding,$2499,Enterprise,Dedicated implementation,,
+Custom Integration,$1500-5000,Any tier,Project-based,,
+Data Migration,$500-2000,Any tier,Based on complexity,,
+,,,,,,
+===== COMPETITIVE POSITIONING =====,,,,,,
+Competitor,Entry Price,Mid-Tier,Notes,,
+Zapier,Free-$29,749,Task automation only - no AI,,
+Make (Integromat),$9,$29-99,Visual automation,,
+UiPath,$420/mo,$1680/mo,Enterprise RPA - complex,,
+Automation Anywhere,Custom,$3000+/mo,Enterprise - expensive,,
+Microsoft Power Automate,$15/user,$40/user,Per-user pricing,,
+TRIA (Us),$199,$499-999,AI-native + self-service,,
+,,,,,,
+Our Advantage: AI-native agents with self-service config at SMB-friendly pricing,,,,,,
+,,,,,,
+===== DISCOUNT POLICY =====,,,,,,
+Discount Type,Amount,Conditions,Approval,,
+Annual Prepay,10%,Pay 12 months upfront,Automatic,,
+Startup Discount,25%,<2 years old + <$1M revenue,Sales approval,,
+Non-profit,30%,Verified 501(c)(3),Sales approval,,
+Multi-year (2yr),15%,24-month commitment,Sales approval,,
+Multi-year (3yr),20%,36-month commitment,Founder approval,,
+Volume (10+ seats),Negotiate,Enterprise only,Founder approval,,
+,,,,,,
+===== PAYMENT TERMS =====,,,,,,
+Term,Details,,,,,
+Payment Methods,Credit Card / ACH / Wire (Enterprise),,,,,
+Billing Cycle,Monthly or Annual (prepaid),,,,,
+Net Terms,Net-30 for Enterprise only,,,,,
+Cancellation,Month-to-month / Annual = prorated refund first 30 days,,,,,
+Auto-renewal,Yes - with 30-day notice for changes,,,,,
+,,,,,,
+===== UNIT ECONOMICS =====,,,,,,
+Metric,Starter,Growth,Professional,Enterprise,Blended Avg
+Monthly Price,$199,$499,$999,$2499,$579
+Cost to Serve,$45,$95,$180,$400,$120
+Gross Profit/Customer,$154,$404,$819,$2099,$459
+Gross Margin %,77%,81%,82%,84%,79%
+,,,,,,
+Avg Customer Lifetime,24 months,30 months,36 months,48 months,32 months
+LTV,$3696,$12120,$29484,$100752,$14688
+CAC (Est),$400,$800,$1500,$5000,$950
+LTV:CAC,9.2x,15.2x,19.7x,20.2x,15.5x
+Payback Period,2.6 mo,2.0 mo,1.8 mo,2.4 mo,2.1 mo
+,,,,,,
+===== RECOMMENDED PRICING EVOLUTION =====,,,,,,
+Phase,Timeline,Strategy,,,
+Launch,Y1 Q1-Q2,Aggressive pricing + free trials to get first 10 customers,,,
+Validation,Y1 Q3-Q4,Hold prices - focus on proving value,,,
+Optimization,Y2,A/B test price points - likely increase Starter to $249,,,
+Premium Features,Y3,Introduce add-ons and premium tiers,,,
+Enterprise Push,Y4+,Custom enterprise pricing + volume deals,,,

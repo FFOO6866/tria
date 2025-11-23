@@ -28,6 +28,7 @@ NO MOCKING - Production-grade caching with real infrastructure
 import asyncio
 import hashlib
 import json
+import logging
 import time
 import os
 from typing import Optional, Dict, Any, List, Tuple
@@ -35,13 +36,15 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 # Redis for L1, L3, L4 caches
 try:
     import redis.asyncio as aioredis
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
-    print("Warning: redis[asyncio] not installed. Install with: pip install redis[asyncio]")
+    logger.warning("redis[asyncio] not installed. Install with: pip install redis[asyncio]")
 
 # Sentence transformers for L2 embeddings
 try:
@@ -49,7 +52,7 @@ try:
     SENTENCE_TRANSFORMERS_AVAILABLE = True
 except ImportError:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
-    print("Warning: sentence-transformers not installed. Install with: pip install sentence-transformers")
+    logger.warning("sentence-transformers not installed. Install with: pip install sentence-transformers")
 
 # ChromaDB for L2 vector storage
 try:
@@ -58,7 +61,7 @@ try:
     CHROMADB_AVAILABLE = True
 except ImportError:
     CHROMADB_AVAILABLE = False
-    print("Warning: chromadb not installed. Install with: pip install chromadb")
+    logger.warning("chromadb not installed. Install with: pip install chromadb")
 
 
 # Constants
@@ -227,11 +230,24 @@ class MultiLevelCache:
         Initialize multi-level cache
 
         Args:
-            redis_url: Redis connection URL (default: redis://localhost:6379)
+            redis_url: Redis connection URL (default: builds from REDIS_HOST/PORT/PASSWORD)
             embedding_model: Sentence transformer model for L2 embeddings
             semantic_threshold: Similarity threshold for L2 cache hits (0-1)
         """
-        self.redis_url = redis_url or os.getenv('REDIS_URL', 'redis://localhost:6379')
+        # Build Redis URL from environment variables (compatible with docker-compose)
+        if redis_url:
+            self.redis_url = redis_url
+        elif os.getenv('REDIS_URL'):
+            self.redis_url = os.getenv('REDIS_URL')
+        else:
+            # Build URL from separate env vars (docker-compose pattern)
+            host = os.getenv('REDIS_HOST', 'localhost')
+            port = os.getenv('REDIS_PORT', '6379')
+            password = os.getenv('REDIS_PASSWORD', '')
+            if password:
+                self.redis_url = f"redis://:{password}@{host}:{port}"
+            else:
+                self.redis_url = f"redis://{host}:{port}"
         self.embedding_model_name = embedding_model
         self.semantic_threshold = semantic_threshold
 
@@ -270,13 +286,13 @@ class MultiLevelCache:
                 )
                 # Test connection
                 await self.redis_client.ping()
-                print(f"Redis connected: {self.redis_url}")
+                logger.info(f"Redis connected: {self.redis_url}")
             except Exception as e:
-                print(f"Warning: Redis connection failed: {e}")
-                print("L1, L3, L4 caches will be disabled")
+                logger.warning(f"Redis connection failed: {e}")
+                logger.warning("L1, L3, L4 caches will be disabled")
                 self.redis_client = None
         else:
-            print("Redis not available. L1, L3, L4 caches disabled.")
+            logger.warning("Redis not available. L1, L3, L4 caches disabled.")
 
         # Initialize ChromaDB for L2
         if CHROMADB_AVAILABLE:
@@ -297,26 +313,26 @@ class MultiLevelCache:
                     name="response_cache_l2",
                     metadata={"hnsw:space": "cosine"}
                 )
-                print(f"ChromaDB L2 cache initialized: {CHROMA_CACHE_DIR}")
+                logger.info(f"ChromaDB L2 cache initialized: {CHROMA_CACHE_DIR}")
             except Exception as e:
-                print(f"Warning: ChromaDB initialization failed: {e}")
-                print("L2 semantic cache will be disabled")
+                logger.warning(f"ChromaDB initialization failed: {e}")
+                logger.warning("L2 semantic cache will be disabled")
                 self.chroma_client = None
                 self.chroma_collection = None
         else:
-            print("ChromaDB not available. L2 semantic cache disabled.")
+            logger.warning("ChromaDB not available. L2 semantic cache disabled.")
 
         # Initialize sentence transformer for L2
         if SENTENCE_TRANSFORMERS_AVAILABLE:
             try:
                 self.embedding_model = SentenceTransformer(self.embedding_model_name)
-                print(f"Embedding model loaded: {self.embedding_model_name}")
+                logger.info(f"Embedding model loaded: {self.embedding_model_name}")
             except Exception as e:
-                print(f"Warning: Embedding model failed to load: {e}")
-                print("L2 semantic cache will be disabled")
+                logger.warning(f"Embedding model failed to load: {e}")
+                logger.warning("L2 semantic cache will be disabled")
                 self.embedding_model = None
         else:
-            print("Sentence transformers not available. L2 semantic cache disabled.")
+            logger.warning("Sentence transformers not available. L2 semantic cache disabled.")
 
         self._initialized = True
 
@@ -369,7 +385,7 @@ class MultiLevelCache:
                             task.cancel()
                     return result
         except Exception as e:
-            print(f"Error in multilevel cache check: {e}")
+            logger.error(f"Error in multilevel cache check: {e}")
 
         # All levels missed
         return None
@@ -466,7 +482,7 @@ class MultiLevelCache:
                 self.metrics.l1_misses += 1
                 return None
         except Exception as e:
-            print(f"L1 cache error: {e}")
+            logger.debug(f"L1 cache error: {e}")
             self.metrics.l1_misses += 1
             return None
 
@@ -484,7 +500,7 @@ class MultiLevelCache:
             key = self._make_l1_key(message, user_id)
             await self.redis_client.setex(key, L1_TTL, response)
         except Exception as e:
-            print(f"L1 cache put error: {e}")
+            logger.debug(f"L1 cache put error: {e}")
 
     def _make_l1_key(self, message: str, user_id: str) -> str:
         """Create L1 cache key"""
@@ -551,7 +567,7 @@ class MultiLevelCache:
             self.metrics.l2_misses += 1
             return None
         except Exception as e:
-            print(f"L2 cache error: {e}")
+            logger.debug(f"L2 cache error: {e}")
             self.metrics.l2_misses += 1
             return None
 
@@ -582,7 +598,7 @@ class MultiLevelCache:
                 }]
             )
         except Exception as e:
-            print(f"L2 cache put error: {e}")
+            logger.debug(f"L2 cache put error: {e}")
 
     # ===== L3: Intent cache (Redis) =====
 
@@ -616,7 +632,7 @@ class MultiLevelCache:
                 self.metrics.l3_misses += 1
                 return None
         except Exception as e:
-            print(f"L3 cache error: {e}")
+            logger.debug(f"L3 cache error: {e}")
             self.metrics.l3_misses += 1
             return None
 
@@ -629,7 +645,7 @@ class MultiLevelCache:
             key = self._make_l3_key(message)
             await self.redis_client.setex(key, L3_TTL, intent)
         except Exception as e:
-            print(f"L3 cache put error: {e}")
+            logger.debug(f"L3 cache put error: {e}")
 
     def _make_l3_key(self, message: str) -> str:
         """Create L3 cache key"""
@@ -669,7 +685,7 @@ class MultiLevelCache:
                 self.metrics.l4_misses += 1
                 return None
         except Exception as e:
-            print(f"L4 cache error: {e}")
+            logger.debug(f"L4 cache error: {e}")
             self.metrics.l4_misses += 1
             return None
 
@@ -684,7 +700,7 @@ class MultiLevelCache:
             serialized = json.dumps(rag_results)
             await self.redis_client.setex(key, L4_TTL, serialized)
         except Exception as e:
-            print(f"L4 cache put error: {e}")
+            logger.debug(f"L4 cache put error: {e}")
 
     def _make_l4_key(self, message: str) -> str:
         """Create L4 cache key"""

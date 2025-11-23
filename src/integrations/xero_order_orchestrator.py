@@ -88,10 +88,11 @@ class XeroOrderOrchestrator:
         status: AgentStatus,
         progress: int,
         current_task: Optional[str] = None,
-        details: Optional[List[str]] = None
+        details: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None
     ):
         """
-        Update agent status in timeline for UI visualization.
+        Update agent status in timeline for UI visualization with detailed outputs.
 
         Args:
             agent_name: Name of the agent (e.g., "Customer Service Agent")
@@ -99,7 +100,19 @@ class XeroOrderOrchestrator:
             progress: Progress percentage (0-100)
             current_task: Current task description
             details: List of detail strings for the agent
+            metadata: Additional structured data (DO numbers, invoice IDs, inventory levels, etc.)
         """
+        # Map agent names to functional categories for filtering
+        category_map = {
+            "🎧 Customer Service": "orders",
+            "📦 Inventory Manager": "inventory",
+            "🚚 Delivery Coordinator": "delivery",
+            "🎯 Operations Orchestrator": "orders",
+            "💰 Finance Controller": "finance"
+        }
+
+        now = datetime.now()
+
         # Find existing agent or create new
         agent_entry = next(
             (a for a in self.agent_timeline if a['agent_name'] == agent_name),
@@ -109,12 +122,20 @@ class XeroOrderOrchestrator:
         if agent_entry:
             agent_entry['status'] = status.value
             agent_entry['progress'] = progress
+            agent_entry['updated_at'] = now.isoformat()
+            agent_entry['updated_timestamp'] = now.timestamp()
             if current_task:
                 agent_entry['current_task'] = current_task
             if details:
                 agent_entry['details'] = details
+            if metadata:
+                # Merge metadata instead of replacing
+                if 'metadata' not in agent_entry:
+                    agent_entry['metadata'] = {}
+                agent_entry['metadata'].update(metadata)
             if status == AgentStatus.COMPLETED:
-                agent_entry['end_time'] = datetime.now().timestamp()
+                agent_entry['end_time'] = now.timestamp()
+                agent_entry['completed_at'] = now.isoformat()
         else:
             self.agent_timeline.append({
                 'agent_name': agent_name,
@@ -122,8 +143,16 @@ class XeroOrderOrchestrator:
                 'progress': progress,
                 'current_task': current_task or '',
                 'details': details or [],
-                'start_time': datetime.now().timestamp(),
-                'end_time': None
+                'category': category_map.get(agent_name, 'general'),
+                'date': now.strftime('%Y-%m-%d'),
+                'time': now.strftime('%H:%M:%S'),
+                'start_time': now.timestamp(),
+                'started_at': now.isoformat(),
+                'updated_at': now.isoformat(),
+                'updated_timestamp': now.timestamp(),
+                'end_time': None,
+                'completed_at': None,
+                'metadata': metadata or {}
             })
 
     def verify_customer_in_xero(
@@ -221,6 +250,7 @@ class XeroOrderOrchestrator:
         all_available = True
         issues = []
         details = []
+        inventory_summary = []
 
         try:
             for item in line_items:
@@ -238,45 +268,102 @@ class XeroOrderOrchestrator:
                 if product:
                     # Product exists in Xero
                     if product.quantity_on_hand is not None:
+                        remaining_after = product.quantity_on_hand - requested_qty
                         if product.quantity_on_hand >= requested_qty:
                             details.append(
-                                f"✓ {product.name} ({sku}): {product.quantity_on_hand} available, "
-                                f"{requested_qty} requested"
+                                f"✓ {product.name} ({sku}): Current stock {product.quantity_on_hand} units, "
+                                f"requested {requested_qty} units, remaining {remaining_after} units"
                             )
+                            inventory_summary.append({
+                                'sku': sku,
+                                'product_name': product.name,
+                                'before': product.quantity_on_hand,
+                                'requested': requested_qty,
+                                'after': remaining_after,
+                                'status': 'available'
+                            })
                         else:
                             details.append(
-                                f"⚠ {product.name} ({sku}): Only {product.quantity_on_hand} available, "
-                                f"{requested_qty} requested"
+                                f"⚠ {product.name} ({sku}): Insufficient stock! Current {product.quantity_on_hand} units, "
+                                f"requested {requested_qty} units, short by {requested_qty - product.quantity_on_hand} units"
                             )
                             issues.append(
                                 f"Insufficient stock for {product.name}: "
                                 f"{product.quantity_on_hand} < {requested_qty}"
                             )
+                            inventory_summary.append({
+                                'sku': sku,
+                                'product_name': product.name,
+                                'before': product.quantity_on_hand,
+                                'requested': requested_qty,
+                                'shortfall': requested_qty - product.quantity_on_hand,
+                                'status': 'insufficient'
+                            })
                             all_available = False
                     else:
                         # Quantity tracking not enabled in Xero
-                        details.append(f"✓ {product.name} ({sku}): Product exists (quantity not tracked)")
+                        details.append(f"✓ {product.name} ({sku}): Product exists (inventory tracking not enabled in Xero)")
+                        inventory_summary.append({
+                            'sku': sku,
+                            'product_name': product.name,
+                            'requested': requested_qty,
+                            'status': 'untracked'
+                        })
                 else:
                     # Product not found in Xero
                     details.append(f"✗ Product not found in Xero: {sku}")
                     issues.append(f"Product not found: {sku}")
                     all_available = False
+                    inventory_summary.append({
+                        'sku': sku,
+                        'requested': requested_qty,
+                        'status': 'not_found'
+                    })
 
+            # Add summary of inventory changes
             if all_available:
+                summary_details = [
+                    f"✓ All {len(line_items)} products available in inventory",
+                    f"✓ Inventory verification completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    "",
+                    "Inventory Details:"
+                ] + details
+
                 self._update_agent_status(
                     "📦 Inventory Manager",
                     AgentStatus.COMPLETED,
                     100,
-                    "Inventory verified",
-                    details
+                    "Inventory verified - all items available",
+                    summary_details,
+                    metadata={
+                        'inventory_summary': inventory_summary,
+                        'total_products_checked': len(line_items),
+                        'all_available': True,
+                        'checked_date': datetime.now().isoformat()
+                    }
                 )
             else:
+                summary_details = [
+                    f"⚠ Inventory issues detected for {len(issues)} items",
+                    f"✓ Checked at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    "",
+                    "Inventory Details:"
+                ] + details
+
                 self._update_agent_status(
                     "📦 Inventory Manager",
                     AgentStatus.ERROR,
                     50,
-                    "Inventory issues found",
-                    details
+                    "Inventory issues - insufficient stock detected",
+                    summary_details,
+                    metadata={
+                        'inventory_summary': inventory_summary,
+                        'total_products_checked': len(line_items),
+                        'all_available': False,
+                        'issues_count': len(issues),
+                        'issues': issues,
+                        'checked_date': datetime.now().isoformat()
+                    }
                 )
 
             return all_available, issues
@@ -353,18 +440,44 @@ class XeroOrderOrchestrator:
                 reference=reference
             )
 
+            # Prepare detailed line items for output
+            line_items_summary = []
+            total_qty = 0
+            for item in xero_line_items:
+                line_items_summary.append(
+                    f"  • {item.get('description', item.get('item_code'))}: "
+                    f"{item.get('quantity')} units @ ${item.get('unit_price', 0):.2f} = "
+                    f"${item.get('quantity', 0) * item.get('unit_price', 0):.2f}"
+                )
+                total_qty += item.get('quantity', 0)
+
             self._update_agent_status(
                 "🚚 Delivery Coordinator",
                 AgentStatus.COMPLETED,
                 100,
-                "Draft order created",
+                f"Draft Delivery Order #{reference} prepared",
                 [
-                    f"✓ Draft order created in Xero",
+                    f"✓ Draft Delivery Order #{reference} created in Xero",
+                    f"✓ Customer: {customer.name}",
                     f"✓ Order ID: {draft_order.order_id}",
-                    f"✓ Reference: {reference}",
-                    f"✓ Total: ${draft_order.total:.2f}",
+                    f"✓ Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                    f"✓ Total Items: {total_qty} units",
+                    f"✓ Line Items:",
+                    *line_items_summary,
+                    f"✓ Order Total: ${draft_order.total:.2f}",
                     f"✓ Status: {draft_order.status}"
-                ]
+                ],
+                metadata={
+                    'do_number': reference,
+                    'order_id': draft_order.order_id,
+                    'customer': customer.name,
+                    'customer_id': customer.contact_id,
+                    'total_amount': draft_order.total,
+                    'total_quantity': total_qty,
+                    'line_items': xero_line_items,
+                    'status': draft_order.status,
+                    'created_date': datetime.now().isoformat()
+                }
             )
 
             return draft_order
@@ -502,19 +615,55 @@ class XeroOrderOrchestrator:
                 reference=reference
             )
 
+            # Prepare detailed invoice line items for output
+            invoice_line_items_summary = []
+            total_qty = 0
+            subtotal = 0
+            for item in xero_line_items:
+                line_total = item.get('quantity', 0) * item.get('unit_price', 0)
+                invoice_line_items_summary.append(
+                    f"  • {item.get('description', item.get('item_code'))}: "
+                    f"{item.get('quantity')} units @ ${item.get('unit_price', 0):.2f} = "
+                    f"${line_total:.2f} (Tax: {item.get('tax_type', 'N/A')})"
+                )
+                total_qty += item.get('quantity', 0)
+                subtotal += line_total
+
+            tax_amount = invoice.total - subtotal if invoice.total >= subtotal else 0
+
             self._update_agent_status(
                 "💰 Finance Controller",
                 AgentStatus.COMPLETED,
                 100,
-                "Invoice posted",
+                f"Invoice {invoice.invoice_number} generated and posted",
                 [
-                    f"✓ Invoice created and posted to Xero",
-                    f"✓ Invoice Number: {invoice.invoice_number}",
+                    f"✓ Invoice {invoice.invoice_number} created and posted to Xero",
+                    f"✓ Customer: {customer.name}",
                     f"✓ Invoice ID: {invoice.invoice_id}",
                     f"✓ Reference: {reference}",
-                    f"✓ Total: ${invoice.total:.2f}",
-                    f"✓ Status: {invoice.status}"
-                ]
+                    f"✓ Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                    f"✓ Total Items: {total_qty} units",
+                    f"✓ Line Items:",
+                    *invoice_line_items_summary,
+                    f"✓ Subtotal: ${subtotal:.2f}",
+                    f"✓ Tax: ${tax_amount:.2f}",
+                    f"✓ Invoice Total: ${invoice.total:.2f}",
+                    f"✓ Payment Status: {invoice.status}"
+                ],
+                metadata={
+                    'invoice_number': invoice.invoice_number,
+                    'invoice_id': invoice.invoice_id,
+                    'reference': reference,
+                    'customer': customer.name,
+                    'customer_id': customer.contact_id,
+                    'subtotal': subtotal,
+                    'tax_amount': tax_amount,
+                    'total_amount': invoice.total,
+                    'total_quantity': total_qty,
+                    'line_items': xero_line_items,
+                    'status': invoice.status,
+                    'generated_date': datetime.now().isoformat()
+                }
             )
 
             return invoice
@@ -695,6 +844,256 @@ class XeroOrderOrchestrator:
                 "agent_timeline": self.agent_timeline,
                 "error": f"Workflow error: {str(e)}"
             }
+
+    def get_timeline_filtered(
+        self,
+        category: Optional[str] = None,
+        date: Optional[str] = None,
+        status: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get filtered agent timeline outputs.
+
+        Args:
+            category: Filter by functionality (inventory, delivery, finance, orders, general)
+            date: Filter by date (YYYY-MM-DD format)
+            status: Filter by status (idle, processing, completed, error)
+
+        Returns:
+            Filtered list of agent timeline entries
+
+        Example:
+            # Get all inventory operations
+            inventory_ops = orchestrator.get_timeline_filtered(category='inventory')
+
+            # Get all operations from today
+            today_ops = orchestrator.get_timeline_filtered(date='2025-01-15')
+
+            # Get all completed finance operations
+            finance_done = orchestrator.get_timeline_filtered(
+                category='finance',
+                status='completed'
+            )
+        """
+        filtered = self.agent_timeline
+
+        if category:
+            filtered = [
+                entry for entry in filtered
+                if entry.get('category') == category
+            ]
+
+        if date:
+            filtered = [
+                entry for entry in filtered
+                if entry.get('date') == date
+            ]
+
+        if status:
+            filtered = [
+                entry for entry in filtered
+                if entry.get('status') == status
+            ]
+
+        return filtered
+
+    def get_timeline_grouped_by_date(self) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get agent timeline grouped by date for daily summary view.
+
+        Returns:
+            Dictionary with dates as keys and lists of agent entries as values
+
+        Example Output:
+            {
+                "2025-01-15": [
+                    {
+                        "agent_name": "📦 Inventory Manager",
+                        "category": "inventory",
+                        "current_task": "Inventory verified",
+                        "details": ["✓ Product A: Current stock 100, requested 10..."],
+                        "metadata": {...}
+                    },
+                    {
+                        "agent_name": "💰 Finance Controller",
+                        "category": "finance",
+                        "current_task": "Invoice INV-001 generated",
+                        ...
+                    }
+                ],
+                "2025-01-16": [...]
+            }
+        """
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+
+        for entry in self.agent_timeline:
+            date = entry.get('date', 'unknown')
+            if date not in grouped:
+                grouped[date] = []
+            grouped[date].append(entry)
+
+        # Sort dates in descending order (most recent first)
+        return dict(sorted(grouped.items(), reverse=True))
+
+    def get_timeline_grouped_by_category(self) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get agent timeline grouped by functional category.
+
+        Returns:
+            Dictionary with categories as keys (inventory, delivery, finance, orders, general)
+            and lists of agent entries as values
+
+        Example Output:
+            {
+                "inventory": [
+                    {
+                        "agent_name": "📦 Inventory Manager",
+                        "current_task": "Inventory verified",
+                        "metadata": {
+                            "inventory_summary": [
+                                {"sku": "PROD-001", "before": 100, "after": 90, ...}
+                            ]
+                        }
+                    }
+                ],
+                "finance": [...],
+                "delivery": [...]
+            }
+        """
+        grouped: Dict[str, List[Dict[str, Any]]] = {
+            'inventory': [],
+            'delivery': [],
+            'finance': [],
+            'orders': [],
+            'general': []
+        }
+
+        for entry in self.agent_timeline:
+            category = entry.get('category', 'general')
+            if category in grouped:
+                grouped[category].append(entry)
+            else:
+                grouped['general'].append(entry)
+
+        return grouped
+
+    def get_generated_outputs_summary(self) -> Dict[str, Any]:
+        """
+        Get comprehensive summary of all generated outputs for reporting.
+
+        This provides a complete view of all actions performed, suitable for:
+        - Daily activity reports
+        - Audit trails
+        - Performance dashboards
+        - Client-facing status updates
+
+        Returns:
+            Dictionary with comprehensive output summary including:
+            - Total operations by category
+            - Documents generated (DOs, invoices)
+            - Inventory movements
+            - Timeline grouped by date and category
+
+        Example Output:
+            {
+                "summary": {
+                    "total_operations": 5,
+                    "by_category": {
+                        "inventory": 1,
+                        "delivery": 1,
+                        "finance": 1,
+                        "orders": 2
+                    },
+                    "documents_generated": {
+                        "delivery_orders": ["DO-Store1-20250115-143022"],
+                        "invoices": ["INV-Store1-20250115-143055"]
+                    }
+                },
+                "by_date": {
+                    "2025-01-15": [...]
+                },
+                "by_category": {
+                    "inventory": [...],
+                    "finance": [...]
+                },
+                "inventory_movements": [
+                    {
+                        "product": "Product A",
+                        "sku": "PROD-001",
+                        "before": 100,
+                        "withdrawn": 10,
+                        "after": 90,
+                        "date": "2025-01-15 14:30:22"
+                    }
+                ]
+            }
+        """
+        # Collect document references
+        delivery_orders = []
+        invoices = []
+        inventory_movements = []
+
+        # Count operations by category
+        category_counts = {
+            'inventory': 0,
+            'delivery': 0,
+            'finance': 0,
+            'orders': 0,
+            'general': 0
+        }
+
+        for entry in self.agent_timeline:
+            category = entry.get('category', 'general')
+            if entry.get('status') == 'completed':
+                category_counts[category] = category_counts.get(category, 0) + 1
+
+            # Extract delivery orders
+            metadata = entry.get('metadata', {})
+            if 'do_number' in metadata:
+                delivery_orders.append({
+                    'do_number': metadata['do_number'],
+                    'customer': metadata.get('customer'),
+                    'total_amount': metadata.get('total_amount'),
+                    'total_quantity': metadata.get('total_quantity'),
+                    'date': entry.get('completed_at') or entry.get('updated_at')
+                })
+
+            # Extract invoices
+            if 'invoice_number' in metadata:
+                invoices.append({
+                    'invoice_number': metadata['invoice_number'],
+                    'customer': metadata.get('customer'),
+                    'total_amount': metadata.get('total_amount'),
+                    'tax_amount': metadata.get('tax_amount'),
+                    'date': entry.get('completed_at') or entry.get('updated_at')
+                })
+
+            # Extract inventory movements
+            if 'inventory_summary' in metadata:
+                for item in metadata['inventory_summary']:
+                    if item.get('status') == 'available' and 'before' in item:
+                        inventory_movements.append({
+                            'product': item.get('product_name'),
+                            'sku': item.get('sku'),
+                            'before': item.get('before'),
+                            'withdrawn': item.get('requested'),
+                            'after': item.get('after'),
+                            'date': entry.get('completed_at') or entry.get('updated_at')
+                        })
+
+        return {
+            'summary': {
+                'total_operations': len([e for e in self.agent_timeline if e.get('status') == 'completed']),
+                'by_category': category_counts,
+                'documents_generated': {
+                    'delivery_orders': delivery_orders,
+                    'invoices': invoices
+                }
+            },
+            'by_date': self.get_timeline_grouped_by_date(),
+            'by_category': self.get_timeline_grouped_by_category(),
+            'inventory_movements': inventory_movements
+        }
 
 
 # Global singleton instance

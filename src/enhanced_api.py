@@ -782,41 +782,13 @@ async def chatbot_endpoint(request: ChatbotRequest):
                     openai_key = config.OPENAI_API_KEY
 
                     logger.info(f"[AGENT 1] Customer Service - Running semantic search...")
-                    try:
-                        relevant_products = semantic_product_search(
-                            message=request.message,
-                            database_url=database_url,
-                            api_key=openai_key,
-                            top_n=10,
-                            min_similarity=0.3
-                        )
-                    except RuntimeError as embed_error:
-                        # Fallback: Load all products if embeddings not available
-                        logger.warning(f"[AGENT 1] Semantic search failed (embeddings not available), falling back to all products: {embed_error}")
-                        from database import get_db_engine
-                        from sqlalchemy import text
-
-                        engine = get_db_engine(database_url)
-                        with engine.connect() as conn:
-                            result = conn.execute(text("""
-                                SELECT sku, description, unit_price, uom, category, stock_quantity
-                                FROM products
-                                WHERE is_active = :is_active
-                                ORDER BY category, sku
-                            """), {"is_active": True})
-
-                            relevant_products = []
-                            for row in result:
-                                relevant_products.append({
-                                    'sku': row.sku,
-                                    'description': row.description,
-                                    'unit_price': float(row.unit_price) if row.unit_price else 0.0,
-                                    'uom': row.uom or 'pieces',
-                                    'category': row.category or '',
-                                    'stock_quantity': row.stock_quantity or 0
-                                })
-
-                        logger.info(f"[AGENT 1] Loaded {len(relevant_products)} products from database (fallback mode)")
+                    relevant_products = semantic_product_search(
+                        message=request.message,
+                        database_url=database_url,
+                        api_key=openai_key,
+                        top_n=10,
+                        min_similarity=0.3
+                    )
 
                     if len(relevant_products) == 0:
                         raise ValueError("No products matched your order description")

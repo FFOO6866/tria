@@ -41,6 +41,9 @@ class Product(Base):
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     notes = Column(Text, nullable=False, default='')
 
+    # Semantic search embedding (OpenAI text-embedding-3-small JSON array)
+    embedding = Column(Text, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), nullable=False,
                        server_default=func.now(), index=True)

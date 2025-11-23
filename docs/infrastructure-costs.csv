@@ -1,0 +1,96 @@
+Category,Component,Service,Monthly Cost (USD),Notes
+===== CENTRAL PLATFORM =====,,,,
+Central Platform,Website + API,EC2 t3.medium or ECS,30-50,Always running
+Central Platform,Central Database,RDS PostgreSQL db.t3.micro,15-25,Customer configs and billing data
+Central Platform,Redis Sessions,ElastiCache cache.t3.micro,12,Session management
+Central Platform,Load Balancer,ALB,16,Plus traffic costs
+Central Platform,Domain + SSL,Route53 + ACM,1,Annual domain ~$12
+Central Platform,Subtotal,,75-100,
+
+===== STAGING ENVIRONMENT =====,,,,
+Staging,Staging Central,EC2 t3.small,19,Testing platform
+Staging,Staging Database,RDS db.t3.micro,15,Test data
+Staging,Staging Redis,ElastiCache,12,Test cache
+Staging,Test Customer Instance,EC2 t3.small,19,Integration testing
+Staging,Subtotal,,65,
+
+===== PER-CUSTOMER INSTANCE =====,,,,
+Per-Customer (Shared),Container Compute,ECS Fargate,15-25,Per customer - shared infrastructure
+Per-Customer (Shared),Database,Schema per tenant,0,Included in central DB
+Per-Customer (Shared),Redis,Namespace per tenant,0,Included in central Redis
+Per-Customer (Isolated),Dedicated Compute,EC2 t3.small,19,Per customer - isolated
+Per-Customer (Isolated),Dedicated Database,RDS db.t3.micro,25,Per customer
+Per-Customer (Isolated),Dedicated Redis,ElastiCache,12,Per customer
+Per-Customer (Isolated),Subtotal,,50-70,Per customer
+
+===== CI/CD PIPELINE =====,,,,
+CI/CD,GitHub Actions,Free tier 2000 min,0,Upgrade to Team if needed
+CI/CD,Container Registry,ECR,5,Image storage
+CI/CD,Secrets Manager,AWS Secrets Manager,5,API keys and configs
+CI/CD,Subtotal,,10,
+
+===== ADDITIONAL SERVICES =====,,,,
+Services,Payment Processing,Stripe,2.9% + 0.30,Per transaction
+Services,Email Service,SendGrid,0-20,Free tier available
+Services,Error Tracking,Sentry,0-26,Free tier available
+Services,Monitoring,CloudWatch,10,Logs and metrics
+Services,Subtotal,,10-56,
+
+===== OPENAI API COSTS =====,,,,
+OpenAI,GPT-4 Turbo Input,Per 1K tokens,0.01,
+OpenAI,GPT-4 Turbo Output,Per 1K tokens,0.03,
+OpenAI,Est. per Order,~2K tokens total,0.03,Intent + RAG + Response
+OpenAI,100 orders/month,,3,
+OpenAI,500 orders/month,,15,
+OpenAI,1000 orders/month,,30,
+
+===== COST SCENARIOS =====,,,,
+Scenario: MVP Staging Only,Staging Environment,,65,Testing only
+Scenario: MVP Staging Only,OpenAI (testing),,10,
+Scenario: MVP Staging Only,Total,,75,
+
+Scenario: Launch 5 Customers,Central Platform,,100,
+Scenario: Launch 5 Customers,Staging,,65,
+Scenario: Launch 5 Customers,5 Customer Instances (Shared),,100,~$20 each
+Scenario: Launch 5 Customers,CI/CD + Monitoring,,25,
+Scenario: Launch 5 Customers,OpenAI (500 orders),,15,
+Scenario: Launch 5 Customers,Total,,305,
+
+Scenario: Growth 10 Customers,Central Platform,,100,
+Scenario: Growth 10 Customers,Staging,,65,
+Scenario: Growth 10 Customers,10 Customer Instances (Shared),,200,~$20 each
+Scenario: Growth 10 Customers,CI/CD + Monitoring,,25,
+Scenario: Growth 10 Customers,OpenAI (1000 orders),,30,
+Scenario: Growth 10 Customers,Total,,420,
+
+Scenario: Growth 10 Customers Isolated,Central Platform,,100,
+Scenario: Growth 10 Customers Isolated,Staging,,65,
+Scenario: Growth 10 Customers Isolated,10 Customer Instances (Isolated),,500,~$50 each
+Scenario: Growth 10 Customers Isolated,CI/CD + Monitoring,,25,
+Scenario: Growth 10 Customers Isolated,OpenAI (1000 orders),,30,
+Scenario: Growth 10 Customers Isolated,Total,,720,
+
+Scenario: Scale 20 Customers,Central Platform,,100,
+Scenario: Scale 20 Customers,Staging,,65,
+Scenario: Scale 20 Customers,20 Customer Instances (Shared),,400,~$20 each
+Scenario: Scale 20 Customers,CI/CD + Monitoring,,35,
+Scenario: Scale 20 Customers,OpenAI (2000 orders),,60,
+Scenario: Scale 20 Customers,Total,,660,
+
+Scenario: Scale 50 Customers,Central Platform,,150,Upgraded for scale
+Scenario: Scale 50 Customers,Staging,,65,
+Scenario: Scale 50 Customers,50 Customer Instances (Shared),,1000,~$20 each
+Scenario: Scale 50 Customers,CI/CD + Monitoring,,50,
+Scenario: Scale 50 Customers,OpenAI (5000 orders),,150,
+Scenario: Scale 50 Customers,Total,,1415,
+
+===== EC2 INSTANCE REFERENCE =====,,,,
+EC2 Reference,t3.micro,1 GB RAM / 2 vCPU,0,Free tier - not recommended
+EC2 Reference,t3.small,2 GB RAM / 2 vCPU,19,MVP / Small production
+EC2 Reference,t3.medium,4 GB RAM / 2 vCPU,30,Production recommended
+EC2 Reference,t3.large,8 GB RAM / 2 vCPU,60,High traffic
+
+===== COST PER CUSTOMER SUMMARY =====,,,,
+Per Customer Cost,Shared Infrastructure Model,,15-25,Containerized multi-tenant
+Per Customer Cost,Isolated Infrastructure Model,,50-70,Dedicated resources
+Per Customer Cost,OpenAI per 100 orders,,3,Variable based on usage

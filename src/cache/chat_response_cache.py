@@ -131,7 +131,9 @@ class ChatResponseCache:
         """
         Create cache key from message and conversation context
 
-        The key includes recent conversation history to ensure context-appropriate responses.
+        Uses a tiered approach for better cache hit rates:
+        - Simple queries (greetings, policy questions): message-only key
+        - Context-dependent queries: includes conversation history
 
         Args:
             message: Current user message
@@ -143,15 +145,35 @@ class ChatResponseCache:
         # Normalize message
         normalized_message = message.lower().strip()
 
-        # Include last 3 messages for context (balance between context and cache hits)
+        # Determine if this query is context-independent (can be cached without history)
+        # Common patterns that don't need context:
+        context_independent_patterns = [
+            "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
+            "what is your", "what's your", "delivery policy", "return policy",
+            "refund policy", "shipping", "hours", "contact", "help", "thank",
+            "warranty", "price of", "how much", "do you have", "available"
+        ]
+
+        # Check if message matches context-independent patterns
+        is_context_independent = any(
+            pattern in normalized_message for pattern in context_independent_patterns
+        )
+
+        # For context-independent queries, use message-only key (higher hit rate)
+        if is_context_independent or not conversation_history:
+            return hashlib.sha256(normalized_message.encode()).hexdigest()
+
+        # For context-dependent queries, include recent history
+        # But limit to last 2 messages to balance context vs hit rate
         context_str = normalized_message
 
         if conversation_history:
-            recent_messages = conversation_history[-3:] if len(conversation_history) > 3 else conversation_history
+            recent_messages = conversation_history[-2:] if len(conversation_history) > 2 else conversation_history
             for msg in recent_messages:
                 role = msg.get("role", "")
                 content = msg.get("content", "")
-                context_str += f"|{role}:{content.lower().strip()[:50]}"
+                # Only include first 30 chars to reduce key specificity
+                context_str += f"|{role}:{content.lower().strip()[:30]}"
 
         # Create hash
         return hashlib.sha256(context_str.encode()).hexdigest()
