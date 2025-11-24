@@ -4,6 +4,10 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Tria AIBPO Platform',
   description: 'Multi-Agent AIBPO System for Supply Chain Automation',
+  icons: {
+    icon: '/tria-logo.png',
+    apple: '/tria-logo.png',
+  },
 };
 
 export default function RootLayout({
