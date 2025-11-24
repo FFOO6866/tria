@@ -65,6 +65,7 @@ class ProductionConfig:
             'XERO_CLIENT_SECRET',
             'XERO_REFRESH_TOKEN',
             'XERO_TENANT_ID',
+            'XERO_WEBHOOK_KEY',
             'SECRET_KEY'
         ]
 
@@ -85,6 +86,8 @@ class ProductionConfig:
         self.XERO_CLIENT_SECRET = validated_config.get('XERO_CLIENT_SECRET')
         self.XERO_REFRESH_TOKEN = validated_config.get('XERO_REFRESH_TOKEN')
         self.XERO_TENANT_ID = validated_config.get('XERO_TENANT_ID')
+        self.XERO_WEBHOOK_KEY = validated_config.get('XERO_WEBHOOK_KEY')
+        self.XERO_REDIRECT_URI = os.getenv('XERO_REDIRECT_URI')
         self.SECRET_KEY = validated_config.get('SECRET_KEY')
 
         # Xero API settings (with defaults)

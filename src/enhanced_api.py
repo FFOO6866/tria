@@ -1158,7 +1158,7 @@ Return a JSON object with:
                             f"✅ Order created successfully!\n\n"
                             f"**Order Details:**\n"
                             f"- Order ID: {created_order_id}\n"
-                            f"- Outlet: {outlet_name}\n"
+                            f"- Outlet: {outlet_name_full or 'N/A'}\n"
                             f"- Products: {len(line_items)} types\n"
                             f"- Total Quantity: {total_items} units\n"
                             f"- Total Amount: ${float(total):.2f} SGD\n\n"
@@ -1168,7 +1168,7 @@ Return a JSON object with:
                         response_text = (
                             f"✅ Order processed successfully!\n\n"
                             f"**Order Summary:**\n"
-                            f"- Outlet: {outlet_name}\n"
+                            f"- Outlet: {outlet_name_full or 'N/A'}\n"
                             f"- Products: {len(line_items)} types\n"
                             f"- Total Quantity: {total_items} units\n"
                             f"- Total: ${float(total):.2f} SGD\n\n"
@@ -2839,6 +2839,55 @@ async def post_invoice_to_xero(order_id: int):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/xero/webhook")
+async def xero_webhook_handler(request: Request):
+    """
+    Xero Webhook Endpoint
+
+    Receives notifications from Xero when invoices are created, updated, or deleted.
+
+    Security:
+    - Verifies HMAC-SHA256 signature from Xero
+    - Rejects unsigned or tampered requests
+
+    Returns:
+        200 OK if webhook processed successfully
+        401 Unauthorized if signature verification fails
+        400 Bad Request if payload is invalid
+    """
+    try:
+        from api.xero_webhook import handle_xero_webhook
+
+        # Get webhook key from config
+        webhook_key = config.XERO_WEBHOOK_KEY
+
+        if not webhook_key:
+            logger.error("XERO_WEBHOOK_KEY not configured")
+            raise HTTPException(
+                status_code=500,
+                detail="Webhook key not configured on server"
+            )
+
+        # Handle webhook (includes signature verification)
+        result = await handle_xero_webhook(request, webhook_key)
+
+        logger.info(
+            f"Webhook processed successfully: {result['events_processed']} events",
+            extra=result
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error processing webhook: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
 
 
 @app.get("/api/v1/generated-outputs")

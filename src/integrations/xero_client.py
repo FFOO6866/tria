@@ -1,8 +1,8 @@
 """
-Xero API Client for Tria AIBPO (REST API Implementation)
+Xero API Client for Tria AIBPO (Official SDK Implementation)
 
 Provides OAuth2.0 authentication and API methods for Xero integration.
-Uses direct REST API calls for maximum reliability.
+Uses official xero-python SDK for maximum reliability and maintainability.
 
 Supports the complete order-to-invoice workflow:
 1. Customer verification
@@ -12,18 +12,32 @@ Supports the complete order-to-invoice workflow:
 5. Invoice generation and posting
 
 Production-grade implementation:
+- Official Xero SDK (xero-python)
 - Centralized configuration
-- Connection pooling via singleton pattern
+- Singleton pattern for connection management
 - Comprehensive error handling
-- Rate limiting awareness
+- Automatic token refresh
 """
 
 import logging
 import re
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass
-import requests
+
+# Official Xero SDK imports
+from xero_python.api_client import ApiClient, Configuration
+from xero_python.api_client.oauth2 import OAuth2Token
+from xero_python.accounting import AccountingApi
+from xero_python.accounting import (
+    Contact, Contacts,
+    Item, Items,
+    PurchaseOrder, PurchaseOrders,
+    Invoice, Invoices,
+    LineItem,
+    Phone
+)
+from xero_python.exceptions import AccountingBadRequestException
 
 # Use centralized config
 from config import config
@@ -54,11 +68,11 @@ def validate_xero_where_clause_input(value: str, field_name: str = "input") -> s
 
     Example:
         # BEFORE (VULNERABLE):
-        params={'where': f'Name=="{customer_name}"'}  # ❌ Injection risk
+        where = f'Name=="{customer_name}"'  # ❌ Injection risk
 
         # AFTER (SECURE):
         safe_name = validate_xero_where_clause_input(customer_name, "customer_name")
-        params={'where': f'Name=="{safe_name}"'}  # ✅ Protected
+        where = f'Name=="{safe_name}"'  # ✅ Protected
     """
     if not value or not isinstance(value, str):
         raise ValueError(f"{field_name} must be a non-empty string")
@@ -142,14 +156,15 @@ class XeroInvoice:
 
 class XeroClient:
     """
-    Xero API client with OAuth2.0 authentication using REST API.
+    Xero API client with OAuth2.0 authentication using official SDK.
 
-    Singleton pattern: Reuses access token and session.
+    Singleton pattern: Reuses API client and token across requests.
     Thread-safe for production use.
     """
 
     _instance: Optional['XeroClient'] = None
-    _access_token: Optional[str] = None
+    _api_client: Optional[ApiClient] = None
+    _accounting_api: Optional[AccountingApi] = None
     _token_expiry: Optional[datetime] = None
 
     def __new__(cls):
@@ -181,100 +196,72 @@ class XeroClient:
                 "XERO_CLIENT_SECRET, and XERO_TENANT_ID in .env file"
             )
 
+        # Initialize SDK API client
+        self._initialize_api_client()
+
         self._initialized = True
-        logger.info("Xero client initialized (singleton)")
+        logger.info("Xero client initialized with official SDK (singleton)")
 
-    def _get_access_token(self) -> str:
-        """
-        Get valid access token, refreshing if necessary.
-
-        Uses singleton pattern - token is cached and reused.
-        """
-        # Return cached token if still valid
-        if self._access_token and self._token_expiry:
-            if datetime.now() < self._token_expiry - timedelta(minutes=5):
-                return self._access_token
-
-        # Refresh token using OAuth2.0
-        logger.info("Refreshing Xero access token...")
-
+    def _initialize_api_client(self):
+        """Initialize Xero SDK API client with OAuth2 token"""
         try:
-            token_data = {
-                'grant_type': 'refresh_token',
-                'refresh_token': self.refresh_token,
-                'client_id': self.client_id,
-                'client_secret': self.client_secret,
-            }
+            # Create OAuth2 token with client credentials
+            # NOTE: OAuth2Token constructor signature: (client_id, client_secret, expiration_buffer)
+            token = OAuth2Token(
+                client_id=self.client_id,
+                client_secret=self.client_secret
+            )
 
-            response = requests.post(self.token_url, data=token_data)
-            response.raise_for_status()
+            # Set refresh token (required for refresh flow)
+            token.refresh_token = self.refresh_token
 
-            token_response = response.json()
-            self._access_token = token_response['access_token']
+            # Create API client first (needed for refresh)
+            api_config = Configuration()
+            self._api_client = ApiClient(api_config)
 
-            # Token typically expires in 30 minutes
-            expires_in = token_response.get('expires_in', 1800)
-            self._token_expiry = datetime.now() + timedelta(seconds=expires_in)
+            # Refresh token to get access token
+            # NOTE: refresh_access_token() requires an ApiClient instance
+            token.refresh_access_token(self._api_client)
 
-            # Update refresh token if provided
-            if 'refresh_token' in token_response:
-                self.refresh_token = token_response['refresh_token']
+            # Store token expiry
+            if hasattr(token, 'expires_at') and token.expires_at:
+                self._token_expiry = datetime.fromtimestamp(token.expires_at)
+            else:
+                # Default to 30 minutes if expires_at not available
+                self._token_expiry = datetime.now() + timedelta(seconds=1800)
 
-            logger.info(f"Access token refreshed, expires at {self._token_expiry}")
-            return self._access_token
+            # Update API configuration with authenticated token
+            api_config.oauth2_token = token
+            api_config.oauth2_token_saver = self._token_saver
+
+            # Create accounting API
+            self._accounting_api = AccountingApi(self._api_client)
+
+            logger.info(f"Xero SDK API client initialized, token expires at {self._token_expiry}")
 
         except Exception as e:
-            logger.error(f"Failed to refresh Xero access token: {e}")
-            raise RuntimeError(f"Xero authentication failed: {e}")
+            logger.error(f"Failed to initialize Xero SDK API client: {e}")
+            raise RuntimeError(f"Xero SDK initialization failed: {e}")
+
+    def _token_saver(self, token: OAuth2Token):
+        """Callback to save refreshed token (updates expiry time)"""
+        if hasattr(token, 'expires_at'):
+            self._token_expiry = datetime.fromtimestamp(token.expires_at)
+            logger.info(f"Token refreshed, new expiry: {self._token_expiry}")
+
+        # Update refresh token if changed
+        if hasattr(token, 'refresh_token') and token.refresh_token:
+            self.refresh_token = token.refresh_token
+
+    def _ensure_token_valid(self):
+        """Ensure access token is valid, refresh if needed"""
+        if self._token_expiry and datetime.now() >= self._token_expiry - timedelta(minutes=5):
+            logger.info("Token expiring soon, refreshing...")
+            self._initialize_api_client()
 
     @circuit_breaker("xero")
     @retry_on_rate_limit(max_attempts=5)
     @retry_with_backoff(max_attempts=3)
-    def _make_request(
-        self,
-        method: str,
-        endpoint: str,
-        data: Optional[Dict] = None,
-        params: Optional[Dict] = None
-    ) -> requests.Response:
-        """
-        Make authenticated request to Xero API with retries and circuit breaker.
-
-        Args:
-            method: HTTP method (GET, POST, PUT, etc.)
-            endpoint: API endpoint (e.g., '/Contacts')
-            data: Request body data (for POST/PUT)
-            params: Query parameters
-
-        Returns:
-            Response object
-
-        Raises:
-            requests.exceptions.HTTPError: If request fails
-        """
-        access_token = self._get_access_token()
-
-        headers = {
-            'Authorization': f'Bearer {access_token}',
-            'Xero-Tenant-Id': self.tenant_id,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-        }
-
-        url = f"{self.api_url}{endpoint}"
-
-        response = requests.request(
-            method=method,
-            url=url,
-            headers=headers,
-            json=data,
-            params=params,
-            timeout=30  # 30 second timeout for all Xero API requests
-        )
-
-        response.raise_for_status()
-        return response
-
     @rate_limit_xero
     def verify_customer(self, customer_name: str) -> Optional[XeroCustomer]:
         """
@@ -287,27 +274,31 @@ class XeroClient:
             XeroCustomer if found, None otherwise
         """
         try:
+            self._ensure_token_valid()
+
             # SECURITY: Validate input to prevent injection attacks
             safe_customer_name = validate_xero_where_clause_input(customer_name, "customer_name")
 
-            response = self._make_request(
-                'GET',
-                '/Contacts',
-                params={'where': f'Name=="{safe_customer_name}"'}
+            # Use SDK to get contacts with WHERE clause
+            contacts = self._accounting_api.get_contacts(
+                xero_tenant_id=self.tenant_id,
+                where=f'Name=="{safe_customer_name}"'
             )
 
-            data = response.json()
-            contacts = data.get('Contacts', [])
+            if contacts and contacts.contacts and len(contacts.contacts) > 0:
+                contact = contacts.contacts[0]
 
-            if contacts:
-                contact = contacts[0]
+                # Extract phone number if available
+                phone = None
+                if contact.phones and len(contact.phones) > 0:
+                    phone = contact.phones[0].phone_number
 
                 customer = XeroCustomer(
-                    contact_id=contact['ContactID'],
-                    name=contact['Name'],
-                    email=contact.get('EmailAddress'),
-                    phone=contact.get('Phones', [{}])[0].get('PhoneNumber') if contact.get('Phones') else None,
-                    is_customer=contact.get('IsCustomer', True)
+                    contact_id=contact.contact_id,
+                    name=contact.name,
+                    email=contact.email_address,
+                    phone=phone,
+                    is_customer=contact.is_customer if contact.is_customer is not None else True
                 )
 
                 logger.info(f"Customer found: {customer.name} (ID: {customer.contact_id})")
@@ -316,10 +307,16 @@ class XeroClient:
                 logger.info(f"Customer not found: {customer_name}")
                 return None
 
+        except AccountingBadRequestException as e:
+            logger.error(f"Xero API error verifying customer: {e}")
+            raise
         except Exception as e:
             logger.error(f"Error verifying customer: {e}")
             raise
 
+    @circuit_breaker("xero")
+    @retry_on_rate_limit(max_attempts=5)
+    @retry_with_backoff(max_attempts=3)
     @rate_limit_xero
     def check_inventory(self, product_code: str) -> Optional[XeroProduct]:
         """
@@ -332,29 +329,33 @@ class XeroClient:
             XeroProduct if found, None otherwise
         """
         try:
+            self._ensure_token_valid()
+
             # SECURITY: Validate input to prevent injection attacks
             safe_product_code = validate_xero_where_clause_input(product_code, "product_code")
 
-            response = self._make_request(
-                'GET',
-                '/Items',
-                params={'where': f'Code=="{safe_product_code}"'}
+            # Use SDK to get items with WHERE clause
+            items_response = self._accounting_api.get_items(
+                xero_tenant_id=self.tenant_id,
+                where=f'Code=="{safe_product_code}"'
             )
 
-            data = response.json()
-            items = data.get('Items', [])
+            if items_response and items_response.items and len(items_response.items) > 0:
+                item = items_response.items[0]
 
-            if items:
-                item = items[0]
+                # Extract unit price from sales details
+                unit_price = 0.0
+                if item.sales_details and item.sales_details.unit_price:
+                    unit_price = float(item.sales_details.unit_price)
 
                 product = XeroProduct(
-                    item_id=item['ItemID'],
-                    code=item['Code'],
-                    name=item.get('Name', item['Code']),
-                    description=item.get('Description'),
-                    unit_price=float(item.get('SalesDetails', {}).get('UnitPrice', 0)),
-                    quantity_on_hand=float(item.get('QuantityOnHand', 0)) if 'QuantityOnHand' in item else None,
-                    is_sold=item.get('IsSold', True)
+                    item_id=item.item_id,
+                    code=item.code,
+                    name=item.name if item.name else item.code,
+                    description=item.description,
+                    unit_price=unit_price,
+                    quantity_on_hand=float(item.quantity_on_hand) if item.quantity_on_hand is not None else None,
+                    is_sold=item.is_sold if item.is_sold is not None else True
                 )
 
                 logger.info(f"Product found: {product.name} (Code: {product.code})")
@@ -363,10 +364,16 @@ class XeroClient:
                 logger.info(f"Product not found: {product_code}")
                 return None
 
+        except AccountingBadRequestException as e:
+            logger.error(f"Xero API error checking inventory: {e}")
+            raise
         except Exception as e:
             logger.error(f"Error checking inventory: {e}")
             raise
 
+    @circuit_breaker("xero")
+    @retry_on_rate_limit(max_attempts=5)
+    @retry_with_backoff(max_attempts=3)
     @rate_limit_xero
     def create_draft_order(
         self,
@@ -389,7 +396,9 @@ class XeroClient:
             XeroDraftOrder with order details
         """
         try:
-            # Build line items
+            self._ensure_token_valid()
+
+            # Build line items using SDK models
             po_line_items = []
             total = 0.0
 
@@ -397,48 +406,63 @@ class XeroClient:
                 line_total = item['quantity'] * item['unit_price']
                 total += line_total
 
-                po_line_items.append({
-                    'ItemCode': item.get('item_code'),
-                    'Description': item.get('description', ''),
-                    'Quantity': item['quantity'],
-                    'UnitAmount': item['unit_price'],
-                    'LineAmount': line_total
-                })
+                line_item = LineItem(
+                    item_code=item.get('item_code'),
+                    description=item.get('description', ''),
+                    quantity=item['quantity'],
+                    unit_amount=item['unit_price'],
+                    line_amount=line_total
+                )
+                po_line_items.append(line_item)
 
-            # Create draft purchase order
-            purchase_order = {
-                'Contact': {'ContactID': contact_id},
-                'LineItems': po_line_items,
-                'Reference': reference or f"DO-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-                'Status': 'DRAFT',
-                'Date': datetime.now().strftime('%Y-%m-%d')
-            }
+            # Create contact reference
+            contact = Contact(contact_id=contact_id)
 
-            response = self._make_request(
-                'POST',
-                '/PurchaseOrders',
-                data={'PurchaseOrders': [purchase_order]}
-            )
-
-            data = response.json()
-            created_po = data['PurchaseOrders'][0]
-
-            draft_order = XeroDraftOrder(
-                order_id=created_po['PurchaseOrderID'],
-                contact_id=contact_id,
-                line_items=line_items,
-                total=total,
+            # Create purchase order using SDK model
+            purchase_order = PurchaseOrder(
+                contact=contact,
+                line_items=po_line_items,
+                reference=reference or f"DO-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
                 status="DRAFT",
-                date_created=datetime.now()
+                date=datetime.now().date()
             )
 
-            logger.info(f"Draft order created: {created_po.get('PurchaseOrderNumber')} (ID: {draft_order.order_id})")
-            return draft_order
+            # Create purchase orders collection
+            purchase_orders = PurchaseOrders(purchase_orders=[purchase_order])
 
+            # Call API
+            created_pos = self._accounting_api.create_purchase_orders(
+                xero_tenant_id=self.tenant_id,
+                purchase_orders=purchase_orders
+            )
+
+            if created_pos and created_pos.purchase_orders and len(created_pos.purchase_orders) > 0:
+                created_po = created_pos.purchase_orders[0]
+
+                draft_order = XeroDraftOrder(
+                    order_id=created_po.purchase_order_id,
+                    contact_id=contact_id,
+                    line_items=line_items,
+                    total=total,
+                    status="DRAFT",
+                    date_created=datetime.now()
+                )
+
+                logger.info(f"Draft order created: {created_po.purchase_order_number} (ID: {draft_order.order_id})")
+                return draft_order
+            else:
+                raise RuntimeError("Failed to create draft order: No purchase order returned")
+
+        except AccountingBadRequestException as e:
+            logger.error(f"Xero API error creating draft order: {e}")
+            raise
         except Exception as e:
             logger.error(f"Error creating draft order: {e}")
             raise
 
+    @circuit_breaker("xero")
+    @retry_on_rate_limit(max_attempts=5)
+    @retry_with_backoff(max_attempts=3)
     @rate_limit_xero
     def finalize_order(self, order_id: str) -> bool:
         """
@@ -451,29 +475,40 @@ class XeroClient:
             True if successful, False otherwise
         """
         try:
-            purchase_order = {
-                'PurchaseOrderID': order_id,
-                'Status': 'SUBMITTED'
-            }
+            self._ensure_token_valid()
 
-            response = self._make_request(
-                'POST',
-                f'/PurchaseOrders/{order_id}',
-                data={'PurchaseOrders': [purchase_order]}
+            # Create purchase order with updated status
+            purchase_order = PurchaseOrder(
+                purchase_order_id=order_id,
+                status="SUBMITTED"
             )
 
-            data = response.json()
-            if data.get('PurchaseOrders'):
+            purchase_orders = PurchaseOrders(purchase_orders=[purchase_order])
+
+            # Update purchase order
+            updated_pos = self._accounting_api.update_purchase_order(
+                xero_tenant_id=self.tenant_id,
+                purchase_order_id=order_id,
+                purchase_orders=purchase_orders
+            )
+
+            if updated_pos and updated_pos.purchase_orders and len(updated_pos.purchase_orders) > 0:
                 logger.info(f"Order finalized: {order_id}")
                 return True
             else:
                 logger.warning(f"Failed to finalize order: {order_id}")
                 return False
 
+        except AccountingBadRequestException as e:
+            logger.error(f"Xero API error finalizing order: {e}")
+            raise
         except Exception as e:
             logger.error(f"Error finalizing order: {e}")
             raise
 
+    @circuit_breaker("xero")
+    @retry_on_rate_limit(max_attempts=5)
+    @retry_with_backoff(max_attempts=3)
     @rate_limit_xero
     def create_invoice(
         self,
@@ -496,7 +531,9 @@ class XeroClient:
             XeroInvoice with invoice details
         """
         try:
-            # Build line items
+            self._ensure_token_valid()
+
+            # Build line items using SDK models
             invoice_line_items = []
             subtotal = 0.0
 
@@ -504,17 +541,18 @@ class XeroClient:
                 line_total = item['quantity'] * item['unit_price']
                 subtotal += line_total
 
-                invoice_line_items.append({
-                    'ItemCode': item.get('item_code'),
-                    'Description': item.get('description', ''),
-                    'Quantity': item['quantity'],
-                    'UnitAmount': item['unit_price'],
-                    'LineAmount': line_total,
-                    'TaxType': item.get('tax_type', config.XERO_TAX_TYPE),
-                    'AccountCode': config.XERO_SALES_ACCOUNT_CODE
-                })
+                line_item = LineItem(
+                    item_code=item.get('item_code'),
+                    description=item.get('description', ''),
+                    quantity=item['quantity'],
+                    unit_amount=item['unit_price'],
+                    line_amount=line_total,
+                    tax_type=item.get('tax_type', config.XERO_TAX_TYPE),
+                    account_code=config.XERO_SALES_ACCOUNT_CODE
+                )
+                invoice_line_items.append(line_item)
 
-            # Calculate tax
+            # Calculate tax and total
             tax_amount = subtotal * config.TAX_RATE
             total = subtotal + tax_amount
 
@@ -522,39 +560,50 @@ class XeroClient:
             if due_date is None:
                 due_date = datetime.now() + timedelta(days=30)
 
-            # Create invoice
-            invoice = {
-                'Type': 'ACCREC',  # Accounts Receivable (sales invoice)
-                'Contact': {'ContactID': contact_id},
-                'LineItems': invoice_line_items,
-                'Reference': reference or f"INV-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-                'Date': datetime.now().strftime('%Y-%m-%d'),
-                'DueDate': due_date.strftime('%Y-%m-%d'),
-                'Status': 'AUTHORISED'  # Post immediately
-            }
+            # Create contact reference
+            contact = Contact(contact_id=contact_id)
 
-            response = self._make_request(
-                'POST',
-                '/Invoices',
-                data={'Invoices': [invoice]}
+            # Create invoice using SDK model
+            invoice = Invoice(
+                type="ACCREC",  # Accounts Receivable (sales invoice)
+                contact=contact,
+                line_items=invoice_line_items,
+                reference=reference or f"INV-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                date=datetime.now().date(),
+                due_date=due_date.date() if isinstance(due_date, datetime) else due_date,
+                status="AUTHORISED"  # Post immediately
             )
 
-            data = response.json()
-            created_invoice = data['Invoices'][0]
+            # Create invoices collection
+            invoices = Invoices(invoices=[invoice])
 
-            xero_invoice = XeroInvoice(
-                invoice_id=created_invoice['InvoiceID'],
-                invoice_number=created_invoice['InvoiceNumber'],
-                contact_id=contact_id,
-                line_items=line_items,
-                total=total,
-                status="AUTHORISED",
-                date=datetime.now()
+            # Call API
+            created_invs = self._accounting_api.create_invoices(
+                xero_tenant_id=self.tenant_id,
+                invoices=invoices
             )
 
-            logger.info(f"Invoice created: {created_invoice['InvoiceNumber']} (ID: {xero_invoice.invoice_id})")
-            return xero_invoice
+            if created_invs and created_invs.invoices and len(created_invs.invoices) > 0:
+                created_invoice = created_invs.invoices[0]
 
+                xero_invoice = XeroInvoice(
+                    invoice_id=created_invoice.invoice_id,
+                    invoice_number=created_invoice.invoice_number,
+                    contact_id=contact_id,
+                    line_items=line_items,
+                    total=total,
+                    status="AUTHORISED",
+                    date=datetime.now()
+                )
+
+                logger.info(f"Invoice created: {created_invoice.invoice_number} (ID: {xero_invoice.invoice_id})")
+                return xero_invoice
+            else:
+                raise RuntimeError("Failed to create invoice: No invoice returned")
+
+        except AccountingBadRequestException as e:
+            logger.error(f"Xero API error creating invoice: {e}")
+            raise
         except Exception as e:
             logger.error(f"Error creating invoice: {e}")
             raise
@@ -571,6 +620,9 @@ class XeroClient:
     # COMPENSATING TRANSACTION METHODS (Cleanup/Rollback)
     # ========================================================================
 
+    @circuit_breaker("xero")
+    @retry_on_rate_limit(max_attempts=5)
+    @retry_with_backoff(max_attempts=3)
     @rate_limit_xero
     def delete_draft_order(self, order_id: str) -> bool:
         """
@@ -590,30 +642,27 @@ class XeroClient:
             self.xero_client.delete_draft_order(draft_order.order_id)
         """
         try:
+            self._ensure_token_valid()
+
             logger.info(f"Deleting draft order: {order_id} (compensating transaction)")
 
-            # Xero API: DELETE /PurchaseOrders/{PurchaseOrderID}
-            # Note: Only works for DRAFT orders
-            response = self._make_request(
-                'DELETE',
-                f'/PurchaseOrders/{order_id}'
+            # Use SDK to delete purchase order
+            self._accounting_api.delete_purchase_order(
+                xero_tenant_id=self.tenant_id,
+                purchase_order_id=order_id
             )
 
-            if response.status_code == 200 or response.status_code == 204:
-                logger.info(f"Successfully deleted draft order: {order_id}")
-                return True
-            else:
-                logger.warning(
-                    f"Failed to delete draft order {order_id}: "
-                    f"HTTP {response.status_code} - {response.text}"
-                )
-                return False
+            logger.info(f"Successfully deleted draft order: {order_id}")
+            return True
 
         except Exception as e:
             logger.error(f"Error deleting draft order {order_id}: {e}")
             # Don't raise - compensating transactions should not cascade failures
             return False
 
+    @circuit_breaker("xero")
+    @retry_on_rate_limit(max_attempts=5)
+    @retry_with_backoff(max_attempts=3)
     @rate_limit_xero
     def void_invoice(self, invoice_id: str) -> bool:
         """
@@ -634,60 +683,51 @@ class XeroClient:
             self.xero_client.void_invoice(invoice.invoice_id)
         """
         try:
+            self._ensure_token_valid()
+
             logger.info(f"Voiding invoice: {invoice_id} (compensating transaction)")
 
-            # First, check invoice status
-            response = self._make_request(
-                'GET',
-                f'/Invoices/{invoice_id}'
+            # First, get invoice to check status
+            invoice_response = self._accounting_api.get_invoice(
+                xero_tenant_id=self.tenant_id,
+                invoice_id=invoice_id
             )
 
-            invoice_data = response.json()['Invoices'][0]
-            status = invoice_data.get('Status')
+            if not invoice_response or not invoice_response.invoices or len(invoice_response.invoices) == 0:
+                logger.warning(f"Invoice not found: {invoice_id}")
+                return False
+
+            invoice = invoice_response.invoices[0]
+            status = invoice.status
 
             logger.info(f"Invoice {invoice_id} current status: {status}")
 
-            if status == 'DRAFT':
+            if status == "DRAFT":
                 # DRAFT invoices can be deleted
-                delete_response = self._make_request(
-                    'DELETE',
-                    f'/Invoices/{invoice_id}'
+                self._accounting_api.delete_invoice(
+                    xero_tenant_id=self.tenant_id,
+                    invoice_id=invoice_id
+                )
+                logger.info(f"Successfully deleted DRAFT invoice: {invoice_id}")
+                return True
+
+            elif status in ["AUTHORISED", "SUBMITTED"]:
+                # AUTHORISED/SUBMITTED invoices must be voided
+                void_invoice = Invoice(
+                    invoice_id=invoice_id,
+                    status="VOIDED"
                 )
 
-                if delete_response.status_code in [200, 204]:
-                    logger.info(f"Successfully deleted DRAFT invoice: {invoice_id}")
-                    return True
-                else:
-                    logger.warning(
-                        f"Failed to delete DRAFT invoice {invoice_id}: "
-                        f"HTTP {delete_response.status_code}"
-                    )
-                    return False
+                invoices = Invoices(invoices=[void_invoice])
 
-            elif status in ['AUTHORISED', 'SUBMITTED']:
-                # AUTHORISED/SUBMITTED invoices must be voided (cannot delete)
-                void_data = {
-                    'Invoices': [{
-                        'InvoiceID': invoice_id,
-                        'Status': 'VOIDED'
-                    }]
-                }
-
-                void_response = self._make_request(
-                    'POST',
-                    '/Invoices',
-                    data=void_data
+                self._accounting_api.update_invoice(
+                    xero_tenant_id=self.tenant_id,
+                    invoice_id=invoice_id,
+                    invoices=invoices
                 )
 
-                if void_response.status_code == 200:
-                    logger.info(f"Successfully voided invoice: {invoice_id}")
-                    return True
-                else:
-                    logger.warning(
-                        f"Failed to void invoice {invoice_id}: "
-                        f"HTTP {void_response.status_code}"
-                    )
-                    return False
+                logger.info(f"Successfully voided invoice: {invoice_id}")
+                return True
 
             else:
                 logger.warning(

@@ -1,121 +1,146 @@
+#!/usr/bin/env python3
 """
 Exchange Xero Authorization Code for Tokens
 ============================================
-
-Run this script after visiting the authorization URL.
-Paste the redirect URL when prompted, and it will get your tokens.
+Exchanges the authorization code from OAuth callback for refresh token and tenant ID
 """
 
 import sys
+import json
+import base64
+from pathlib import Path
+from urllib.parse import urlencode, urlparse, parse_qs
 import requests
-from urllib.parse import parse_qs, urlparse
 
-# Your Xero credentials
-CLIENT_ID = "9F2E814559754862AB4B0F57CCE85452"
-CLIENT_SECRET = "qviHe5YO0oRiVEdkmfnL4TmB4KRan2W5nXfXqpjL4USTGFf8"
-REDIRECT_URI = "http://localhost:8080/callback"
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-print("=" * 70)
-print("XERO TOKEN EXCHANGE")
-print("=" * 70)
-print("\nPaste the redirect URL from your browser:")
-print("(It should start with: http://localhost:8080/callback?code=...)")
-print()
+from config import config
 
-redirect_url = input("Redirect URL: ").strip()
+def extract_code_from_url(callback_url: str) -> str:
+    """Extract authorization code from callback URL"""
+    parsed = urlparse(callback_url)
+    params = parse_qs(parsed.query)
 
-# Extract authorization code
-try:
-    parsed = urlparse(redirect_url)
-    query_params = parse_qs(parsed.query)
+    if 'code' not in params:
+        raise ValueError("No authorization code found in URL")
 
-    if 'code' not in query_params:
-        print("\n✗ ERROR: No authorization code found in URL")
-        print("Make sure you copied the entire URL from the browser")
-        sys.exit(1)
+    return params['code'][0]
 
-    auth_code = query_params['code'][0]
-    print(f"\n✓ Authorization code found: {auth_code[:30]}...")
+def exchange_code_for_tokens(auth_code: str) -> dict:
+    """Exchange authorization code for access token, refresh token, and tenant ID"""
 
-except Exception as e:
-    print(f"\n✗ ERROR: Could not parse URL: {e}")
-    sys.exit(1)
+    client_id = config.XERO_CLIENT_ID
+    client_secret = config.XERO_CLIENT_SECRET
+    redirect_uri = config.XERO_REDIRECT_URI or "https://tria.himeet.ai/api/xero/callback"
 
-# Exchange code for tokens
-print("\nExchanging code for tokens...")
+    # Prepare token request
+    token_url = "https://identity.xero.com/connect/token"
 
-token_url = "https://identity.xero.com/connect/token"
-token_data = {
-    "grant_type": "authorization_code",
-    "client_id": CLIENT_ID,
-    "client_secret": CLIENT_SECRET,
-    "code": auth_code,
-    "redirect_uri": REDIRECT_URI
-}
+    # Create Basic Auth header
+    credentials = f"{client_id}:{client_secret}"
+    encoded_credentials = base64.b64encode(credentials.encode()).decode()
 
-try:
-    response = requests.post(token_url, data=token_data)
-    response.raise_for_status()
-    tokens = response.json()
+    headers = {
+        "Authorization": f"Basic {encoded_credentials}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
 
-    access_token = tokens['access_token']
-    refresh_token = tokens['refresh_token']
+    data = {
+        "grant_type": "authorization_code",
+        "code": auth_code,
+        "redirect_uri": redirect_uri
+    }
 
-    print("✓ Tokens received!")
+    print("Exchanging authorization code for tokens...")
+    response = requests.post(token_url, headers=headers, data=data)
 
-except Exception as e:
-    print(f"\n✗ ERROR: Failed to exchange code for tokens")
-    if hasattr(e, 'response'):
-        print(f"Response: {e.response.text}")
-    else:
-        print(f"Error: {e}")
-    sys.exit(1)
+    if response.status_code != 200:
+        print(f"Error: {response.status_code}")
+        print(response.text)
+        raise Exception(f"Token exchange failed: {response.text}")
 
-# Get tenant ID
-print("\nGetting your Xero organization ID...")
+    return response.json()
 
-connections_url = "https://api.xero.com/connections"
-headers = {"Authorization": f"Bearer {access_token}"}
+def get_tenant_id(access_token: str) -> str:
+    """Get Xero tenant ID using access token"""
 
-try:
+    connections_url = "https://api.xero.com/connections"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+
+    print("Fetching tenant ID...")
     response = requests.get(connections_url, headers=headers)
-    response.raise_for_status()
+
+    if response.status_code != 200:
+        raise Exception(f"Failed to get tenant ID: {response.text}")
+
     connections = response.json()
 
     if not connections:
-        print("\n✗ ERROR: No Xero organizations found")
+        raise Exception("No Xero organizations connected")
+
+    # Use the first organization
+    return connections[0]['tenantId'], connections[0]['tenantName']
+
+def main():
+    print("=" * 70)
+    print("XERO TOKEN EXCHANGE")
+    print("=" * 70)
+    print()
+
+    # Get authorization code from command line argument or prompt
+    if len(sys.argv) > 1:
+        callback_url = sys.argv[1]
+    else:
+        print("Paste the callback URL here:")
+        callback_url = input().strip()
+
+    try:
+        # Extract code from URL
+        auth_code = extract_code_from_url(callback_url)
+        print(f"✓ Authorization code extracted")
+        print()
+
+        # Exchange code for tokens
+        token_response = exchange_code_for_tokens(auth_code)
+        print(f"✓ Tokens received")
+        print()
+
+        access_token = token_response['access_token']
+        refresh_token = token_response['refresh_token']
+
+        # Get tenant ID
+        tenant_id, tenant_name = get_tenant_id(access_token)
+        print(f"✓ Tenant ID retrieved")
+        print()
+
+        # Display results
+        print("=" * 70)
+        print("SUCCESS! Add these to your .env file:")
+        print("=" * 70)
+        print()
+        print(f"XERO_REFRESH_TOKEN={refresh_token}")
+        print(f"XERO_TENANT_ID={tenant_id}")
+        print()
+        print(f"Organization: {tenant_name}")
+        print()
+        print("=" * 70)
+        print("NEXT STEPS:")
+        print("=" * 70)
+        print()
+        print("1. Add the above variables to your .env file")
+        print("2. Restart your application: docker-compose restart")
+        print("3. Test the Xero integration")
+        print()
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
-    tenant_id = connections[0]['tenantId']
-    tenant_name = connections[0]['tenantName']
-
-    print(f"✓ Organization: {tenant_name}")
-    print(f"  Tenant ID: {tenant_id}")
-
-except Exception as e:
-    print(f"\n✗ ERROR: Failed to get organization details")
-    if hasattr(e, 'response'):
-        print(f"Response: {e.response.text}")
-    else:
-        print(f"Error: {e}")
-    sys.exit(1)
-
-# Display results
-print("\n" + "=" * 70)
-print("SUCCESS! ADD THESE TO YOUR .ENV FILE")
-print("=" * 70)
-print("\nReplace lines 23-24 in .env with:")
-print("-" * 70)
-print(f"XERO_REFRESH_TOKEN={refresh_token}")
-print(f"XERO_TENANT_ID={tenant_id}")
-print("-" * 70)
-print(f"\nOrganization: {tenant_name}")
-print("\n" + "=" * 70)
-print("NEXT STEPS")
-print("=" * 70)
-print("\n1. Update .env file with the tokens above")
-print("2. Test configuration:")
-print('   python -c "from src.config import config; print(config.xero_configured)"')
-print("\n3. Load demo data:")
-print("   python scripts/load_xero_demo_data.py --dry-run")
-print("\n" + "=" * 70)
+if __name__ == "__main__":
+    main()
