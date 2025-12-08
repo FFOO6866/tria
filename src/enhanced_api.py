@@ -59,6 +59,9 @@ from prompts.prompt_manager import get_prompt_manager, PromptManager
 from api.routes.chat_stream import router as chat_stream_router
 from api.middleware.sse_middleware import SSEMiddleware
 
+# Import Multi-Agent System for production-grade A2A coordination
+from agents.multi_agent_system import get_multi_agent_system, MultiAgentSystem
+
 # Production infrastructure imports
 from production import (
     TransactionManager,
@@ -199,6 +202,7 @@ intent_classifier: Optional[IntentClassifier] = None
 customer_service_agent: Optional[EnhancedCustomerServiceAgent] = None
 async_customer_service_agent: Optional[AsyncCustomerServiceAgent] = None
 knowledge_base: Optional[KnowledgeBase] = None
+multi_agent_system: Optional[MultiAgentSystem] = None  # Production multi-agent system with A2A coordination
 cache: Optional[MultiLevelCache] = None
 chat_cache: Optional[ChatResponseCache] = None
 prompt_manager: Optional[PromptManager] = None
@@ -207,7 +211,7 @@ prompt_manager: Optional[PromptManager] = None
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and components on startup"""
-    global session_manager, intent_classifier, customer_service_agent, async_customer_service_agent, knowledge_base, cache, chat_cache, prompt_manager
+    global session_manager, intent_classifier, customer_service_agent, async_customer_service_agent, knowledge_base, cache, chat_cache, prompt_manager, multi_agent_system
 
     print("=" * 60)
     print("TRIA AI-BPO Enhanced Platform Starting...")
@@ -371,6 +375,24 @@ async def startup_event():
     app.include_router(chat_stream_router, prefix="/api/v1")
     print("[OK] Streaming chat endpoint enabled at /api/v1/chat/stream")
 
+    # Initialize Multi-Agent System for production-grade order processing
+    try:
+        tax_rate = float(os.getenv("TAX_RATE", "0.08"))
+        multi_agent_system = await get_multi_agent_system(
+            database_url=database_url,
+            tax_rate=tax_rate
+        )
+        print("[OK] Multi-Agent System initialized")
+        print("     - Operations Orchestrator (coordinates workflow)")
+        print("     - Finance Controller (pricing calculations)")
+        print("     - Inventory Manager (order creation)")
+        print("     - Delivery Coordinator (delivery scheduling)")
+        print(f"     - Agent-to-Agent (A2A) communication enabled")
+    except Exception as e:
+        print(f"[WARNING] Failed to initialize Multi-Agent System: {e}")
+        print("         Order processing will use fallback sequential code")
+        multi_agent_system = None
+
     print("\n[SUCCESS] Enhanced Platform ready!")
     print(f"API Docs: http://localhost:{config.API_PORT}/docs")
     print("=" * 60 + "\n")
@@ -492,14 +514,13 @@ async def health_check():
             from integrations.xero_client import get_xero_client
             xero_client = get_xero_client()
 
-            # Make a lightweight API call to verify connectivity
-            # GET /Organisation is a simple endpoint that just returns tenant info
-            response = xero_client._make_request('GET', '/Organisation')
+            # Use the check_connection method to verify Xero connectivity
+            connection_result = xero_client.check_connection()
 
-            if response.status_code == 200:
-                health_status["xero"] = "connected"
+            if connection_result.get("connected"):
+                health_status["xero"] = connection_result.get("status", "connected")
             else:
-                health_status["xero"] = f"error: HTTP {response.status_code}"
+                health_status["xero"] = f"error: {connection_result.get('status', 'unknown')}"
                 # Only set degraded if not already unhealthy (preserve severity)
                 if health_status["status"] != "unhealthy":
                     health_status["status"] = "degraded"
@@ -515,7 +536,8 @@ async def health_check():
     # Check ChromaDB
     try:
         # Simple health check - verify knowledge base is initialized
-        if knowledge_base and hasattr(knowledge_base, 'collection'):
+        # KnowledgeBase has 'client' attribute (ChromaDB client), not 'collection'
+        if knowledge_base and hasattr(knowledge_base, 'client') and knowledge_base.client:
             health_status["chromadb"] = "connected"
         else:
             health_status["chromadb"] = "not_initialized"
@@ -767,21 +789,23 @@ async def chatbot_endpoint(request: ChatbotRequest):
             products_mentioned = extracted_entities.get("product_names", [])
             outlet_mentioned = extracted_entities.get("outlet_name")
 
-            # HIGH-CONFIDENCE ORDER: Process with 5-agent workflow
+            # HIGH-CONFIDENCE ORDER: Process with multi-agent workflow
             if products_mentioned and intent_result.confidence >= 0.85:
                 logger.info(f"[CHATBOT] High-confidence order detected (confidence: {intent_result.confidence})")
-                logger.info(f"[CHATBOT] Activating 5-agent workflow for order processing...")
+                logger.info(f"[CHATBOT] Activating multi-agent workflow for order processing...")
 
-                agent_timeline = []
                 order_processing_start = time.time()
 
                 try:
-                    # AGENT 1: Semantic Search for Products
-                    agent_start = time.time()
+                    # ================================================================
+                    # PRE-PROCESSING: Semantic Search + GPT-4 Parsing
+                    # ================================================================
+
+                    # STEP 1: Semantic Search for Products
                     database_url = config.get_database_url()
                     openai_key = config.OPENAI_API_KEY
 
-                    logger.info(f"[AGENT 1] Customer Service - Running semantic search...")
+                    logger.info(f"[PRE-PROCESSING] Running semantic search...")
                     relevant_products = semantic_product_search(
                         message=request.message,
                         database_url=database_url,
@@ -794,19 +818,10 @@ async def chatbot_endpoint(request: ChatbotRequest):
                         raise ValueError("No products matched your order description")
 
                     products_map = {p['sku']: p for p in relevant_products}
-                    agent_timeline.append(AgentStatus(
-                        agent_name=f"🎧 Customer Service",
-                        status="completed",
-                        current_task="Product Search",
-                        details=[f"Found {len(relevant_products)} matching products"],
-                        progress=100,
-                        start_time=agent_start,
-                        end_time=time.time()
-                    ))
+                    logger.info(f"[PRE-PROCESSING] Found {len(relevant_products)} matching products")
 
-                    # AGENT 2: Parse Order with GPT-4
-                    agent_start = time.time()
-                    logger.info(f"[AGENT 2] Operations Orchestrator - Parsing order with GPT-4...")
+                    # STEP 2: Parse Order with GPT-4
+                    logger.info(f"[PRE-PROCESSING] Parsing order with GPT-4...")
 
                     # Build context for GPT-4
                     search_results_text = format_search_results_for_llm(relevant_products)
@@ -846,347 +861,152 @@ Return a JSON object with:
                         parsed_order = json.loads(gpt_response)
 
                     line_items = parsed_order.get("line_items", [])
-                    agent_timeline.append(AgentStatus(
-                        agent_name=f"🎯 Operations Orchestrator",
-                        status="completed",
-                        current_task=f"Parsed {len(line_items)} line items",
-                        details=[f"Parsed {len(line_items)} line items"],
-                        progress=100,
-                        start_time=agent_start,
-                        end_time=time.time()
-                    ))
+                    outlet_name_from_gpt = parsed_order.get("outlet_name")
+                    logger.info(f"[PRE-PROCESSING] Parsed {len(line_items)} line items")
 
-                    # AGENTS 3-5: FULL WORKFLOW - Create actual order, DO, invoice
-                    # This now creates REAL orders in the database
-
-                    # AGENT 3: Finance Controller - Calculate Totals
-                    fin_start = time.time()
-                    from decimal import Decimal
-
-                    totals = calculate_order_total(line_items, products_map)
-                    subtotal = totals['subtotal']
-                    tax = totals['tax']
-                    total = totals['total']
-
-                    # Build line item pricing details
-                    line_pricing = []
-                    for item in line_items:
-                        sku = item.get('sku', 'Unknown')
-                        qty = item.get('quantity', 0)
-                        if sku in products_map:
-                            unit_price = Decimal(str(products_map[sku]['unit_price']))
-                            line_total = unit_price * Decimal(str(qty))
-                            line_pricing.append(f"{sku}: {qty} x ${float(unit_price):.2f} = ${float(line_total):.2f}")
-
-                    agent_timeline.append(AgentStatus(
-                        agent_name=f"💰 Finance Controller",
-                        status="completed",
-                        current_task="Calculated pricing and totals",
-                        details=[
-                            "Pricing from catalog:",
-                            *line_pricing,
-                            f"Subtotal: ${float(subtotal):.2f}",
-                            f"Tax (8% GST): ${float(tax):.2f}",
-                            f"Total: ${float(total):.2f}"
-                        ],
-                        progress=100,
-                        start_time=fin_start,
-                        end_time=time.time()
-                    ))
-
-                    # VALIDATION: Validate order inputs before saving
-                    try:
-                        # Convert to Decimal with proper precision
-                        subtotal_dec = validate_decimal_precision(Decimal(str(subtotal)))
-                        tax_dec = validate_decimal_precision(Decimal(str(tax)))
-                        total_dec = validate_decimal_precision(Decimal(str(total)))
-
-                        # Validate order against business rules
-                        OrderValidator.validate_order(line_items, total_dec)
-
-                        print(f"[VALIDATION] Order validation passed: {len(line_items)} items, total ${float(total_dec):.2f}")
-
-                    except ValueError as validation_error:
-                        print(f"[VALIDATION ERROR] Order validation failed: {str(validation_error)}")
-                        # Track error to Sentry
-                        track_error(validation_error, {
-                            "user_id": request.user_id,
-                            "message": request.message,
-                            "line_items_count": len(line_items),
-                            "total_amount": float(total)
-                        })
-                        # Return error response
-                        return {
-                            "intent": "order_placement",
-                            "response": f"Order validation failed: {str(validation_error)}. Please check your quantities and totals.",
-                            "agent_timeline": agent_timeline,
-                            "conversation_context": None,
-                            "session_id": session_id
-                        }
-
-                    # Create order in database
-                    outlet_name_parsed = parsed_order.get('outlet_name', 'Unknown')
-                    outlet_name_safe = sanitize_for_sql(outlet_name_parsed)  # Prevent SQL injection
-                    print(f"[SANITIZATION] Sanitized outlet name: '{outlet_name_parsed}' → '{outlet_name_safe}'")
-                    created_order_id = None
+                    # STEP 3: Find Outlet in Database
                     outlet_id = None
-                    outlet_name_full = None  # Full name from database for Xero
+                    outlet_name_full = None
 
-                    print(f"\n{'='*60}")
-                    print(f"[ORDER CREATION DEBUG] Starting order creation")
-                    print(f"[ORDER CREATION DEBUG] Parsed order: {parsed_order}")
-                    print(f"[ORDER CREATION DEBUG] Outlet name from GPT-4: '{outlet_name_parsed}'")
-                    print(f"{'='*60}\n")
+                    if outlet_name_from_gpt:
+                        # Search for outlet
+                        outlet_name_safe = outlet_name_from_gpt.strip()
 
-                    # Find outlet using direct SQL query
-                    from database import get_db_engine
-                    from sqlalchemy import text
-                    engine = get_db_engine()
-
-                    try:
-                        with engine.connect() as conn:
-                            # Query outlet by name (case-insensitive, handles both "A&W Jewel" and "A&W - Jewel")
-                            # Strip hyphens and spaces for flexible matching
-                            query = text("""
-                                SELECT id, name FROM outlets
-                                WHERE REPLACE(REPLACE(LOWER(name), '-', ''), ' ', '')
-                                LIKE REPLACE(REPLACE(LOWER(:name_pattern), '-', ''), ' ', '')
-                                LIMIT 1
-                            """)
-                            print(f"[ORDER CREATION DEBUG] Searching for outlet with pattern: '%{outlet_name_safe}%'")
-                            result = conn.execute(query, {'name_pattern': f'%{outlet_name_safe}%'})
-                            outlet_row = result.fetchone()
-                            if outlet_row:
-                                outlet_id = outlet_row[0]
-                                outlet_name_full = outlet_row[1]  # Store full name from database
-                                print(f"[ORDER CREATION DEBUG] SUCCESS: Found outlet: {outlet_name_full} (ID: {outlet_id})")
-                            else:
-                                print(f"[ORDER CREATION DEBUG] ERROR: No outlet found matching: '{outlet_name_parsed}'")
-                    except Exception as e:
-                        print(f"[ORDER CREATION DEBUG] EXCEPTION finding outlet: {str(e)}")
-                        import traceback
-                        traceback.print_exc()
-
-                    if outlet_id:
-                        # Create order record using direct SQL
-                        total_items = sum(item.get("quantity", 0) for item in line_items)
-                        is_large_order = total_items > 1000
-
-                        print(f"[ORDER CREATION DEBUG] Creating order for outlet_id: {outlet_id}")
-                        print(f"[ORDER CREATION DEBUG] Total items: {total_items}, Total amount: ${float(total):.2f}")
+                        from database import get_db_engine
+                        from sqlalchemy import text
+                        engine = get_db_engine()
 
                         try:
                             with engine.connect() as conn:
-                                insert_query = text("""
-                                    INSERT INTO orders (
-                                        outlet_id, whatsapp_message, parsed_items,
-                                        total_amount, status, anomaly_detected,
-                                        escalated, completed_at, created_at
-                                    )
-                                    VALUES (
-                                        :outlet_id, :whatsapp_message, :parsed_items,
-                                        :total_amount, :status, :anomaly_detected,
-                                        :escalated, :completed_at, NOW()
-                                    )
-                                    RETURNING id
+                                query = text("""
+                                    SELECT id, name FROM outlets
+                                    WHERE REPLACE(REPLACE(LOWER(name), '-', ''), ' ', '')
+                                    LIKE REPLACE(REPLACE(LOWER(:name_pattern), '-', ''), ' ', '')
+                                    LIMIT 1
                                 """)
-                                print(f"[ORDER CREATION DEBUG] Executing INSERT query...")
-                                result = conn.execute(insert_query, {
-                                    'outlet_id': outlet_id,
-                                    'whatsapp_message': request.message,
-                                    'parsed_items': json.dumps(parsed_order),
-                                    'total_amount': float(total_dec),  # Use validated decimal
-                                    'status': 'completed',
-                                    'anomaly_detected': is_large_order,
-                                    'escalated': False,
-                                    'completed_at': datetime.now()
-                                })
-                                print(f"[ORDER CREATION DEBUG] Committing transaction...")
-                                conn.commit()
-                                order_row = result.fetchone()
-                                if order_row:
-                                    created_order_id = order_row[0]
-                                    print(f"[ORDER CREATION DEBUG] SUCCESS: Order created successfully! ID: {created_order_id}")
+                                result = conn.execute(query, {'name_pattern': f'%{outlet_name_safe}%'})
+                                outlet_row = result.fetchone()
 
-                                    # Record order creation metrics
-                                    record_order_created(order_value=float(total_dec))
-
-                                    # Audit log successful order creation
-                                    try:
-                                        audit_log(
-                                            event_type=AuditEvent.ORDER_CREATED,
-                                            user_id=request.user_id or "anonymous",
-                                            resource="order",
-                                            action="create",
-                                            details={
-                                                "order_id": created_order_id,
-                                                "outlet_id": outlet_id,
-                                                "total_amount": float(total_dec),
-                                                "item_count": len(line_items)
-                                            },
-                                            success=True
-                                        )
-                                    except Exception:
-                                        pass  # Don't fail order if audit fails
+                                if outlet_row:
+                                    outlet_id = outlet_row[0]
+                                    outlet_name_full = outlet_row[1]
+                                    logger.info(f"[PRE-PROCESSING] Found outlet: {outlet_name_full} (ID: {outlet_id})")
                                 else:
-                                    print(f"[ORDER CREATION DEBUG] ERROR: No order ID returned from INSERT")
+                                    logger.warning(f"[PRE-PROCESSING] Outlet not found: {outlet_name_safe}")
                         except Exception as e:
-                            print(f"[ORDER CREATION DEBUG] EXCEPTION creating order: {str(e)}")
-                            import traceback
-                            traceback.print_exc()
-                    else:
-                        print(f"[ORDER CREATION DEBUG] ERROR: Skipping order creation - no outlet_id found")
+                            logger.error(f"[PRE-PROCESSING] Outlet lookup failed: {e}")
 
-                    # =================================================================
-                    # XERO INTEGRATION: Draft Order → Invoice Workflow (if configured)
-                    # =================================================================
-                    xero_workflow_success = False
-                    xero_invoice_id = None
-                    xero_draft_order_id = None
+                    # ================================================================
+                    # CHECK FOR MISSING OUTLET - ASK USER
+                    # ================================================================
 
-                    if created_order_id and outlet_id and outlet_name_full and config.xero_configured:
-                        try:
-                            logger.info(f"[XERO] Starting Xero workflow for order {created_order_id}")
-                            logger.info(f"[XERO] Customer: {outlet_name_full}")
-                            from integrations.xero_order_orchestrator import XeroOrderOrchestrator
+                    if not outlet_id and len(line_items) > 0:
+                        # We have products but no outlet - ask user conversationally
+                        logger.info(f"[CHATBOT] Missing outlet information - asking user")
 
-                            xero_orchestrator = XeroOrderOrchestrator()
+                        # Build friendly product summary
+                        product_summary = []
+                        for item in line_items:
+                            qty = item.get('quantity', 0)
+                            name = item.get('product_name', item.get('sku', 'item'))
+                            product_summary.append(f"{qty}x {name}")
 
-                            # Build Xero-compatible order data using FULL outlet name from database
-                            # e.g., "A&W - Jewel" not just "Jewel"
-                            xero_order_data = {
-                                'outlet_name': outlet_name_full,  # Use full database name
-                                'line_items': []
-                            }
+                        products_text = ", ".join(product_summary)
 
-                            # Convert line items to Xero format
-                            for item in line_items:
-                                sku = item.get('sku')
-                                if sku in products_map:
-                                    product = products_map[sku]
-                                    xero_order_data['line_items'].append({
-                                        'item_code': sku,
-                                        'description': product.get('description', ''),
-                                        'quantity': item.get('quantity', 0),
-                                        'unit_price': float(product.get('unit_price', 0))
-                                    })
+                        response_text = (
+                            f"I found your order: **{products_text}**\n\n"
+                            f"Which outlet should I send this order to? 🏪\n\n"
+                            f"Please provide the outlet name (e.g., '313', 'A&W Jewel', 'Toa Payoh', etc.)"
+                        )
 
-                            # Execute Xero workflow
-                            xero_result = xero_orchestrator.execute_workflow(xero_order_data)
+                        action_metadata = {
+                            "action": "missing_outlet_info",
+                            "products_detected": products_mentioned,
+                            "line_items_parsed": len(line_items),
+                            "awaiting": "outlet_name"
+                        }
 
-                            # Record Xero API request metrics
-                            record_xero_request(
-                                operation="create_invoice",
-                                success=xero_result['success'],
-                                error_type=xero_result.get('error_type') if not xero_result['success'] else None
+                        response_agent_timeline = None
+
+                        # Skip multi-agent processing, return early
+                        logger.info(f"[CHATBOT] Returning response asking for outlet")
+
+                    # ================================================================
+                    # MULTI-AGENT ORDER PROCESSING
+                    # ================================================================
+
+                    elif multi_agent_system and outlet_id:
+                        logger.info("[CHATBOT] Using Multi-Agent System for order processing")
+
+                        # Process order with multi-agent system
+                        mas_result = await multi_agent_system.process_order(
+                            line_items=line_items,
+                            outlet_id=outlet_id,
+                            outlet_name=outlet_name_full or outlet_name_from_gpt or "Unknown Outlet",
+                            products_map=products_map,
+                            parsed_order=parsed_order
+                        )
+
+                        # Extract results
+                        created_order_id = mas_result.order_id
+                        total = mas_result.total_amount
+                        agent_timeline = mas_result.agent_timeline  # ✅ Real agent timeline!
+
+                        if not mas_result.success:
+                            raise Exception(f"Multi-agent processing failed: {', '.join(mas_result.errors)}")
+
+                        logger.info(
+                            f"[CHATBOT] ✓ Multi-agent processing completed: "
+                            f"order_id={created_order_id}, total=${total}"
+                        )
+
+                        # ================================================================
+                        # BUILD RESPONSE (only for successful order processing)
+                        # ================================================================
+
+                        # Build response message
+                        total_items = sum(item.get("quantity", 0) for item in line_items)
+
+                        if created_order_id:
+                            response_text = (
+                                f"✅ Order created successfully!\n\n"
+                                f"**Order Details:**\n"
+                                f"- Order ID: {created_order_id}\n"
+                                f"- Outlet: {outlet_name_full or 'N/A'}\n"
+                                f"- Products: {len(line_items)} types\n"
+                                f"- Total Quantity: {total_items} units\n"
+                                f"- Total Amount: ${float(total):.2f} SGD\n\n"
+                                f"Processing Time: {time.time() - order_processing_start:.2f}s"
+                            )
+                        else:
+                            response_text = (
+                                f"✅ Order processed successfully!\n\n"
+                                f"**Order Summary:**\n"
+                                f"- Outlet: {outlet_name_full or 'N/A'}\n"
+                                f"- Products: {len(line_items)} types\n"
+                                f"- Total Quantity: {total_items} units\n"
+                                f"- Total: ${float(total):.2f} SGD\n\n"
+                                f"Processing Time: {time.time() - order_processing_start:.2f}s"
                             )
 
-                            if xero_result['success']:
-                                xero_workflow_success = True
-                                xero_invoice_id = xero_result.get('invoice_id')
-                                xero_draft_order_id = xero_result.get('draft_order_id')
+                        action_metadata = {
+                            "action": "order_processed",
+                            "products_detected": products_mentioned,
+                            "line_items_count": len(line_items),
+                            "total_quantity": total_items,
+                            "agents_activated": len(agent_timeline),
+                            "order_id": created_order_id,
+                            "total_amount": float(total),
+                            "multi_agent_system": True  # Flag to indicate MAS was used
+                        }
 
-                                # Merge Xero agent timeline with our timeline
-                                xero_agent_timeline = xero_result.get('agent_timeline', [])
-                                agent_timeline.extend(xero_agent_timeline)
+                        # Store agent_timeline for response
+                        response_agent_timeline = agent_timeline
 
-                                logger.info(f"[XERO] ✓ Workflow completed: Invoice {xero_invoice_id}")
-
-                                # Audit log successful Xero invoice creation
-                                try:
-                                    audit_log(
-                                        event_type=AuditEvent.XERO_INVOICE_CREATED,
-                                        user_id=request.user_id or "anonymous",
-                                        resource="xero_invoice",
-                                        action="create",
-                                        details={
-                                            "invoice_id": xero_invoice_id,
-                                            "draft_order_id": xero_draft_order_id,
-                                            "order_id": created_order_id,
-                                            "customer": outlet_name_full
-                                        },
-                                        success=True
-                                    )
-                                except Exception:
-                                    pass  # Don't fail Xero workflow if audit fails
-                            else:
-                                logger.warning(f"[XERO] Workflow failed: {xero_result.get('message')}")
-
-                        except Exception as xero_error:
-                            # Xero failure doesn't fail the order - order is already created
-                            logger.error(f"[XERO] Error: {str(xero_error)}")
-                            logger.info(f"[XERO] Order {created_order_id} saved in database, Xero sync skipped")
-                    elif created_order_id:
-                        logger.info(f"[XERO] Skipped - Xero not configured (set XERO credentials in .env)")
-
-                    # AGENT 4: Inventory Manager
-                    inv_start = time.time()
-                    inv_details = [
-                        "Stock check completed",
-                        f"Order ID: {created_order_id}" if created_order_id else "Order saved"
-                    ]
-                    if xero_workflow_success:
-                        inv_details.append(f"✓ Synced with Xero")
-                    agent_timeline.append(AgentStatus(
-                        agent_name=f"📦 Inventory Manager",
-                        status="completed",
-                        current_task="Verified stock and updated inventory",
-                        details=inv_details,
-                        progress=100,
-                        start_time=inv_start,
-                        end_time=time.time()
-                    ))
-
-                    # AGENT 5: Delivery Coordinator
-                    del_start = time.time()
-                    agent_timeline.append(AgentStatus(
-                        agent_name=f"🚚 Delivery Coordinator",
-                        status="completed",
-                        current_task="Delivery order ready",
-                        details=[
-                            "DO available for download" if created_order_id else "Delivery scheduled"
-                        ],
-                        progress=100,
-                        start_time=del_start,
-                        end_time=time.time()
-                    ))
-
-                    # Build response message
-                    total_items = sum(item.get("quantity", 0) for item in line_items)
-                    if created_order_id:
-                        response_text = (
-                            f"✅ Order created successfully!\n\n"
-                            f"**Order Details:**\n"
-                            f"- Order ID: {created_order_id}\n"
-                            f"- Outlet: {outlet_name_full or 'N/A'}\n"
-                            f"- Products: {len(line_items)} types\n"
-                            f"- Total Quantity: {total_items} units\n"
-                            f"- Total Amount: ${float(total):.2f} SGD\n\n"
-                            f"Processing Time: {time.time() - order_processing_start:.2f}s"
-                        )
                     else:
-                        response_text = (
-                            f"✅ Order processed successfully!\n\n"
-                            f"**Order Summary:**\n"
-                            f"- Outlet: {outlet_name_full or 'N/A'}\n"
-                            f"- Products: {len(line_items)} types\n"
-                            f"- Total Quantity: {total_items} units\n"
-                            f"- Total: ${float(total):.2f} SGD\n\n"
-                            f"Processing Time: {time.time() - order_processing_start:.2f}s"
-                        )
-
-                    action_metadata = {
-                        "action": "order_processed",
-                        "products_detected": products_mentioned,
-                        "line_items_count": len(line_items),
-                        "total_quantity": total_items,
-                        "agents_activated": 5,
-                        "order_id": created_order_id,
-                        "total_amount": float(total)
-                    }
-
-                    # Store agent_timeline for response
-                    response_agent_timeline = agent_timeline
+                        # Fallback to old sequential code if MAS not available
+                        logger.warning("[CHATBOT] Multi-Agent System not available, using fallback")
+                        raise Exception("Multi-Agent System not initialized")
 
                 except Exception as e:
                     # Log technical error for debugging (NOT shown to customer)
@@ -2839,6 +2659,239 @@ async def post_invoice_to_xero(order_id: int):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/xero/callback")
+async def xero_oauth_callback(code: str = None, state: str = None, error: str = None):
+    """
+    Xero OAuth 2.0 Callback Endpoint
+
+    This endpoint receives the authorization code from Xero after user authorizes the app.
+
+    Returns:
+        HTML page showing the authorization code and instructions
+    """
+    if error:
+        return {
+            "error": error,
+            "message": "Authorization failed. Please try again."
+        }
+
+    if not code:
+        raise HTTPException(status_code=400, detail="No authorization code received")
+
+    # Return HTML page with the code
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Xero Authorization Successful</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                max-width: 800px;
+                margin: 50px auto;
+                padding: 20px;
+                background-color: #f5f5f5;
+            }}
+            .container {{
+                background-color: white;
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }}
+            .success {{
+                color: #28a745;
+                font-size: 24px;
+                margin-bottom: 20px;
+            }}
+            .code-box {{
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 5px;
+                padding: 15px;
+                margin: 20px 0;
+                word-break: break-all;
+                font-family: monospace;
+            }}
+            .instructions {{
+                margin-top: 20px;
+                line-height: 1.6;
+            }}
+            .copy-btn {{
+                background-color: #007bff;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 5px;
+                cursor: pointer;
+                margin-top: 10px;
+            }}
+            .copy-btn:hover {{
+                background-color: #0056b3;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="success">✓ Authorization Successful!</div>
+
+            <p>Xero has authorized the application. Your authorization code is:</p>
+
+            <div class="code-box" id="authCode">{code}</div>
+
+            <button class="copy-btn" onclick="copyCode()">Copy Code</button>
+
+            <div class="instructions">
+                <h3>What's Next:</h3>
+                <ol>
+                    <li>The authorization code has been captured</li>
+                    <li>This code will be automatically exchanged for access tokens</li>
+                    <li>You can close this window</li>
+                </ol>
+
+                <p><strong>Note:</strong> This authorization code can only be used once and expires in 10 minutes.</p>
+            </div>
+        </div>
+
+        <script>
+            function copyCode() {{
+                const code = document.getElementById('authCode').textContent;
+                navigator.clipboard.writeText(code).then(() => {{
+                    alert('Code copied to clipboard!');
+                }});
+            }}
+
+            // Automatically exchange the code for tokens
+            fetch('/api/xero/exchange-token', {{
+                method: 'POST',
+                headers: {{
+                    'Content-Type': 'application/json',
+                }},
+                body: JSON.stringify({{ code: '{code}' }})
+            }})
+            .then(response => response.json())
+            .then(data => {{
+                if (data.success) {{
+                    document.querySelector('.instructions').innerHTML = `
+                        <h3 style="color: #28a745;">✓ Tokens Updated Successfully!</h3>
+                        <p>The Xero integration is now active. You can close this window.</p>
+                        <p><strong>Tenant ID:</strong> ${{data.tenant_id}}</p>
+                    `;
+                }} else {{
+                    console.error('Token exchange failed:', data);
+                }}
+            }})
+            .catch(error => console.error('Error:', error));
+        </script>
+    </body>
+    </html>
+    """
+
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(content=html_content)
+
+
+@app.post("/api/xero/exchange-token")
+async def xero_exchange_token(request: Request):
+    """
+    Exchange Xero authorization code for access tokens
+
+    This endpoint is called automatically by the callback page to exchange
+    the authorization code for refresh token and access token.
+    """
+    try:
+        import base64
+        import requests
+
+        data = await request.json()
+        auth_code = data.get('code')
+
+        if not auth_code:
+            raise HTTPException(status_code=400, detail="No authorization code provided")
+
+        # Exchange code for tokens
+        client_id = config.XERO_CLIENT_ID
+        client_secret = config.XERO_CLIENT_SECRET
+        redirect_uri = config.XERO_REDIRECT_URI or "https://tria.himeet.ai/api/xero/callback"
+
+        credentials = f"{client_id}:{client_secret}"
+        encoded_credentials = base64.b64encode(credentials.encode()).decode()
+
+        headers = {
+            "Authorization": f"Basic {encoded_credentials}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+
+        token_data = {
+            "grant_type": "authorization_code",
+            "code": auth_code,
+            "redirect_uri": redirect_uri
+        }
+
+        response = requests.post(
+            "https://identity.xero.com/connect/token",
+            headers=headers,
+            data=token_data
+        )
+
+        if response.status_code != 200:
+            logger.error(f"Token exchange failed: {response.text}")
+            return {"success": False, "error": response.text}
+
+        tokens = response.json()
+        access_token = tokens['access_token']
+        refresh_token = tokens['refresh_token']
+
+        # Get tenant ID
+        headers = {"Authorization": f"Bearer {access_token}"}
+        connections_response = requests.get(
+            "https://api.xero.com/connections",
+            headers=headers
+        )
+
+        if connections_response.status_code != 200:
+            logger.error(f"Failed to get tenant ID: {connections_response.text}")
+            return {"success": False, "error": "Failed to get tenant ID"}
+
+        connections = connections_response.json()
+        if not connections:
+            return {"success": False, "error": "No Xero organizations connected"}
+
+        tenant_id = connections[0]['tenantId']
+
+        # Save complete token set to persistent storage
+        from integrations.xero_token_storage import save_token_set
+
+        token_set = {
+            'access_token': access_token,
+            'refresh_token': refresh_token,
+            'expires_in': tokens.get('expires_in', 1800),
+            'token_type': tokens.get('token_type', 'Bearer'),
+            'scope': tokens.get('scope', ''),
+            'tenant_id': tenant_id
+        }
+
+        if save_token_set(token_set):
+            logger.info(
+                f"✓ Xero tokens saved to persistent storage!\n"
+                f"XERO_REFRESH_TOKEN={refresh_token}\n"
+                f"XERO_TENANT_ID={tenant_id}\n"
+                f"No .env update needed - tokens auto-loaded from storage"
+            )
+        else:
+            logger.error("Failed to save tokens to storage - will need .env update")
+
+        return {
+            "success": True,
+            "refresh_token": refresh_token,
+            "tenant_id": tenant_id,
+            "message": "Tokens saved to persistent storage. Xero integration is now active!"
+        }
+
+    except Exception as e:
+        logger.error(f"Token exchange failed: {e}")
+        return {"success": False, "error": str(e)}
 
 
 @app.post("/api/xero/webhook")
