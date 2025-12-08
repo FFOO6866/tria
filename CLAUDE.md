@@ -569,3 +569,156 @@ Located in docs/ with numbered files (01-07):
 
 ---
 
+## 📖 Data Dictionary & Naming Enforcement (MANDATORY)
+
+### Data Dictionary Reference
+
+**ALWAYS consult the Data Dictionary before:**
+- Creating new database tables or columns
+- Adding new API endpoints or request/response schemas
+- Creating new environment variables
+- Adding new ChromaDB collections
+
+**File Location**: `docs/DATA_DICTIONARY.md`
+
+**Contents**:
+1. **Database Schema** - All table definitions with column types and descriptions
+2. **API Data Contracts** - Request/response schemas for all endpoints
+3. **ChromaDB Collections** - RAG collection schemas and purposes
+4. **Environment Variables** - Complete catalog of required/optional variables
+5. **Intent Types** - Classification intents and their meanings
+6. **File Path Standards** - Standard locations for data files
+7. **Naming Standards Reference** - Quick lookup for naming patterns
+
+### Pre-Creation Checklist (MANDATORY)
+
+Before creating ANY new data structure, verify against Data Dictionary:
+
+```
+[ ] Check DATA_DICTIONARY.md for existing similar definition
+[ ] Verify column/field naming follows conventions (snake_case, prefixes)
+[ ] Confirm data types match existing patterns
+[ ] Check for existing environment variables before adding new ones
+[ ] Verify API endpoint follows existing patterns (/api/v1/resource)
+[ ] Update DATA_DICTIONARY.md if adding new definitions
+```
+
+### Naming Convention Enforcement
+
+**Files** (see docs/06-naming-conventions.md):
+```python
+# Python modules: snake_case
+enhanced_api.py          # ✅ Correct
+EnhancedApi.py           # ❌ Wrong
+
+# Test files: test_{component}.py
+test_chatbot.py          # ✅ Correct
+chatbot_test.py          # ❌ Wrong
+```
+
+**Database** (see DATA_DICTIONARY.md):
+```sql
+-- Tables: snake_case, singular preferred
+CREATE TABLE product (...)      -- ✅ Correct
+CREATE TABLE Products (...)     -- ❌ Wrong (plural, PascalCase)
+
+-- Columns: snake_case with standard prefixes
+is_active BOOLEAN              -- ✅ Correct (is_ for booleans)
+active BOOLEAN                 -- ❌ Wrong (no prefix)
+created_at TIMESTAMP           -- ✅ Correct (_at for timestamps)
+creation_date TIMESTAMP        -- ❌ Wrong (inconsistent suffix)
+```
+
+**Environment Variables**:
+```bash
+# SCREAMING_SNAKE_CASE
+DATABASE_URL=...               # ✅ Correct
+databaseUrl=...                # ❌ Wrong
+```
+
+**API Endpoints**:
+```
+POST /api/chatbot             # ✅ Correct
+POST /chatbot                  # ❌ Wrong (no /api prefix)
+POST /api/process_order        # ❌ Wrong (use kebab-case: /process-order)
+```
+
+### Cross-Reference Requirements
+
+When creating new code, cross-reference these documents:
+
+| Creating | Check These Documents |
+|----------|----------------------|
+| New table | DATA_DICTIONARY.md, docs/05-data-models.md |
+| New API endpoint | DATA_DICTIONARY.md (API section) |
+| New environment var | DATA_DICTIONARY.md (Env section), src/config.py |
+| New file | docs/06-naming-conventions.md, docs/07-directory-structure.md |
+| New function | docs/06-naming-conventions.md (function naming) |
+| New ChromaDB collection | DATA_DICTIONARY.md (ChromaDB section) |
+
+### Violation Examples
+
+**DO NOT DO THIS**:
+```python
+# Creating redundant environment variable
+OPENAI_KEY = os.getenv('OPENAI_KEY')  # ❌ Already exists as OPENAI_API_KEY
+
+# Creating table without checking Data Dictionary
+CREATE TABLE user_orders (...)         # ❌ Check if 'orders' table exists
+
+# Creating API endpoint without prefix
+@app.post("/create-order")             # ❌ Should be /api/create-order
+```
+
+**DO THIS INSTEAD**:
+```python
+# Check Data Dictionary first
+from config import config
+api_key = config.OPENAI_API_KEY        # ✅ Use existing
+
+# Check existing tables in DATA_DICTIONARY.md
+# Found: 'orders' table already exists
+# Use existing table with proper relationships
+
+# Follow API naming convention
+@app.post("/api/create-order")         # ✅ Correct prefix
+```
+
+---
+
+## 🔄 Existing Scripts Reference (DO NOT DUPLICATE)
+
+Before creating a new script, check if it already exists:
+
+### Data Loading Scripts
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `scripts/load_products_from_excel.py` | Load product catalog | `python scripts/load_products_from_excel.py` |
+| `scripts/load_outlets_from_excel.py` | Load outlet data | `python scripts/load_outlets_from_excel.py` |
+| `scripts/generate_product_embeddings.py` | Generate OpenAI embeddings | `python scripts/generate_product_embeddings.py` |
+| `scripts/build_knowledge_base.py` | Build RAG knowledge base | `python scripts/build_knowledge_base.py` |
+
+### Testing Scripts
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `scripts/smoke_test.py` | Basic functionality | `python scripts/smoke_test.py` |
+| `scripts/test_chromadb_connection.py` | Test ChromaDB | `python scripts/test_chromadb_connection.py` |
+| `scripts/test_rag_retrieval.py` | Test RAG search | `python scripts/test_rag_retrieval.py` |
+
+### Validation Scripts
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `scripts/validate_production_config.py` | Validate config | `python scripts/validate_production_config.py` |
+| `scripts/verify_production_readiness.py` | Check readiness | `python scripts/verify_production_readiness.py` |
+
+### Load Testing Scripts
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `scripts/load_test_1_sustained.py` | 10 users, 1 hour | Staging only |
+| `scripts/load_test_2_burst.py` | 50 users, 5 min | Staging only |
+| `scripts/run_all_load_tests.py` | Run all load tests | Staging only |
+
+**Rule**: If a script exists for your task, USE IT. Don't create a duplicate.
+
+---
+

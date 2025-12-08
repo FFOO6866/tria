@@ -74,6 +74,39 @@ New to TRIA? Start here:
 - Test organization
 - Configuration management
 
+### 8. [Data Dictionary](DATA_DICTIONARY.md)
+**Single source of truth for all data definitions (NEW)**
+- Database schema definitions
+- API request/response contracts
+- Environment variable catalog
+- ChromaDB collection schemas
+- Intent classification types
+- File path standards
+- Naming standards quick reference
+
+---
+
+## Production Readiness
+
+### Current Status
+- [Production Readiness Plan](../PRODUCTION_READINESS_PLAN.md) - Active tasks and fixes
+
+### Historical Reports
+Located in [reports/production-readiness/](reports/production-readiness/):
+- Assessment reports
+- Codebase audits
+- Performance analyses
+
+---
+
+## Integration Guides
+
+### MCP (Model Context Protocol)
+- [MCP Setup Guide](MCP_SETUP.md) - Claude Desktop integration overview
+- [Xero OAuth2 Setup](setup/XERO_OAUTH2_SETUP.md) - Detailed OAuth2 configuration
+- [MCP Troubleshooting](setup/MCP_TROUBLESHOOTING.md) - Common issues and solutions
+- [MCP Usage Examples](guides/MCP_USAGE_EXAMPLES.md) - Real-world usage scenarios
+
 ---
 
 ## Setup Guides
@@ -96,9 +129,10 @@ Located in [setup/](setup/):
 
 **For Developers:**
 1. [Development Standards](04-development-standards.md) - READ THIS FIRST
-2. [Technology Stack](03-technology-stack.md)
-3. [Directory Structure](07-directory-structure.md)
-4. [Data Models](05-data-models.md)
+2. [Data Dictionary](DATA_DICTIONARY.md) - Data definitions and naming
+3. [Technology Stack](03-technology-stack.md)
+4. [Directory Structure](07-directory-structure.md)
+5. [Data Models](05-data-models.md)
 
 **For Deployment:**
 1. [DEPLOYMENT.md](../DEPLOYMENT.md)

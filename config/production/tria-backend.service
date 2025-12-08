@@ -1,0 +1,64 @@
+# TRIA AIBPO Backend Service
+# ===========================
+# Systemd service unit for FastAPI backend
+#
+# Installation:
+#   sudo cp config/production/tria-backend.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable tria-backend
+#   sudo systemctl start tria-backend
+
+[Unit]
+Description=TRIA AIBPO Backend API Server
+Documentation=https://github.com/your-org/tria
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/tria
+Environment="PATH=/opt/tria/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/opt/tria/.env
+
+# Main command - using uvicorn with proper workers
+ExecStart=/opt/tria/.venv/bin/python -m uvicorn src.enhanced_api:app \
+    --host 0.0.0.0 \
+    --port 8001 \
+    --workers 4 \
+    --timeout-keep-alive 30 \
+    --access-log \
+    --log-level info
+
+# Pre-start: Initialize ChromaDB knowledge base if empty
+ExecStartPre=/opt/tria/.venv/bin/python scripts/init_chromadb_if_empty.py
+
+# Restart configuration - CRITICAL for production
+Restart=always
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/tria/data /opt/tria/logs /tmp
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tria-backend
+
+# Watchdog - restart if no response in 30 seconds
+WatchdogSec=30
+NotifyAccess=all
+
+[Install]
+WantedBy=multi-user.target
